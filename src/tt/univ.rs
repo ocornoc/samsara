@@ -610,16 +610,21 @@ impl UniChecker {
         self.zero.into()
     }
 
+    fn add_edge(&mut self, a: Var, b: Var, weight: Level) {
+        let a = a.into();
+        let b = b.into();
+        if let Some(edge) = self.graph.find_edge(a, b) {
+            if weight < self.graph[edge] {
+                self.graph[edge] = weight;
+            }
+        } else {
+            self.graph.add_edge(a, b, weight);
+        }
+    }
+
     pub fn insert_constraint(&mut self, c: Constraint) -> MResult<()> {
         for c in c.compile()?.into_constraints() {
-            let weight = c.edge_weight();
-            if let Some(edge) = self.graph.find_edge(c.greater_var.into(), c.lesser_var.into()) {
-                if weight < self.graph[edge] {
-                    self.graph[edge] = weight;
-                }
-            } else {
-                self.graph.add_edge(c.greater_var.into(), c.lesser_var.into(), weight);
-            }
+            self.add_edge(c.greater_var, c.lesser_var, c.edge_weight());
         }
 
         Ok(())
