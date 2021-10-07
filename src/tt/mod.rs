@@ -172,6 +172,22 @@ impl Term {
         self.normalize_mut();
         self
     }
+
+    fn into_pi(self) -> Result<(Term, Term), Term> {
+        if let Term::Pi(ty, e) = self {
+            Ok((*ty, *e))
+        } else {
+            Err(self)
+        }
+    }
+
+    fn into_sort(self) -> Result<Univ, Term> {
+        if let Term::Sort(u) = self {
+            Ok(u)
+        } else {
+            Err(self)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
