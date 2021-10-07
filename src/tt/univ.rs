@@ -433,47 +433,19 @@ impl Univ {
         }
     }
 
-    pub fn subst(&mut self, db: DeBruijn, new: &Univ) {
+    pub fn subst(&mut self, db: DeBruijn, new: &Univ, checker: &mut UniChecker) {
         match self {
             &mut Univ::Var(Some(d), v) => if d == db {
-                let mut checker = super::CONSTRAINT_CHECKER.lock();
-                // if new can be `max`, then clone all constraints into `v` onto `new`
-                if let Ok(max) = new.clone().into_max() {
-                    let walker = checker.graph
-                        .neighbors_directed(v.into(), Direction::Incoming)
-                        .detach();
-                    for (vnew, l) in Vec::from(max) {
-                        let mut walker = walker.clone();
-                        let vnew = vnew.clone().into();
-                        while let Some((e, n)) = walker.next(&checker.graph) {
-                            let weight = checker.graph[e] + l;
-                            checker.add_edge(n, vnew, weight);
-                        }
-                    }
-                }
-                // if new can be `min`, then clone all constraints from `v` onto `new`
-                if let Ok(min) = new.clone().into_min() {
-                    let walker = checker.graph
-                        .neighbors_directed(v.into(), Direction::Outgoing)
-                        .detach();
-                    for (vnew, l) in Vec::from(min) {
-                        let mut walker = walker.clone();
-                        let vnew = vnew.clone().into();
-                        while let Some((e, n)) = walker.next(&checker.graph) {
-                            let weight = checker.graph[e] - l;
-                            checker.add_edge(vnew, n, weight);
-                        }
-                    }
-                }
+                checker.clone_constraints(v, new);
                 self.clone_from(new);
             },
             Univ::Var(..) => (),
             Univ::Add(t, _) => {
-                t.subst(db, new);
+                t.subst(db, new, checker);
             },
             Univ::Max(ts) | Univ::Min(ts) => {
                 for t in ts {
-                    t.subst(db, new);
+                    t.subst(db, new, checker);
                 }
             },
         }
@@ -618,18 +590,30 @@ impl UniChecker {
         node.into()
     }
 
-    fn clone_constraints(&mut self, old: Var, new: Var) {
-        let orign = old.into();
-        let newn = new.into();
-        let mut in_walker = self.graph.neighbors_directed(orign, Direction::Incoming).detach();
-        let mut out_walker = self.graph.neighbors_directed(orign, Direction::Outgoing).detach();
-
-        while let Some((e, neighbor)) = in_walker.next(&self.graph) {
-            self.add_edge(neighbor, newn, self.graph[e].clone());
+    fn clone_constraints(&mut self, old: Var, new: &Univ) {
+        // if new can be `max`, then clone all constraints into `v` onto `new`
+        if let Ok(max) = new.clone().into_max() {
+            let walker = self.graph.neighbors_directed(old.into(), Direction::Incoming).detach();
+            for (vnew, l) in Vec::from(max) {
+                let mut walker = walker.clone();
+                let vnew = vnew.clone().into();
+                while let Some((e, n)) = walker.next(&self.graph) {
+                    let weight = self.graph[e] - l;
+                    self.add_edge(n, vnew, weight);
+                }
+            }
         }
-
-        while let Some((e, neighbor)) = out_walker.next(&self.graph) {
-            self.add_edge(newn, neighbor, self.graph[e].clone());
+        // if new can be `min`, then clone all constraints from `v` onto `new`
+        if let Ok(min) = new.clone().into_min() {
+            let walker = self.graph.neighbors_directed(old.into(), Direction::Outgoing).detach();
+            for (vnew, l) in Vec::from(min) {
+                let mut walker = walker.clone();
+                let vnew = vnew.clone().into();
+                while let Some((e, n)) = walker.next(&self.graph) {
+                    let weight = self.graph[e] + l;
+                    self.add_edge(vnew, n, weight);
+                }
+            }
         }
     }
 
@@ -859,7 +843,53 @@ mod tests {
                 right: v3.clone() - 2.into(),
             },
         ]).unwrap();
-        eprintln!("{}", checker.create_dot_report(&checker.is_consistent().unwrap_err()));
-        assert!(checker.is_consistent().is_err());
+        let err = checker.is_consistent();
+        assert!(err.is_err());
+        eprintln!("{}", checker.create_dot_report(&err.unwrap_err()));
+    }
+
+    #[test]
+    fn sat_unsat_sub_graph() {
+        fn make_graph() -> (UniChecker, Univ, Univ) {
+            let mut checker = UniChecker::default();
+            let v = Univ::Var(Some(0), checker.fresh_var());
+            let zero = Univ::Var(None, checker.zero.into());
+            checker.try_extend([
+                Constraint {
+                    left: zero.clone(),
+                    c: ConstraintType::Lt,
+                    right: v.clone(),
+                },
+                Constraint {
+                    left: zero.clone(),
+                    c: ConstraintType::Ge,
+                    right: v.clone() - 1.into(),
+                },
+            ]).unwrap();
+            (checker, zero, v)
+        }
+        {
+            assert!(make_graph().0.is_consistent().is_ok());
+        }
+        {
+            let (mut checker, zero, mut v) = make_graph();
+            eprintln!("{}", checker.create_dot_report(&Vec::new()));
+            v.subst(0, &(zero.clone() + 1.into()), &mut checker);
+            assert!(checker.is_consistent().is_ok());
+        }
+        {
+            let (mut checker, zero, mut v) = make_graph();
+            v.subst(0, &(zero.clone() + 0.into()), &mut checker);
+            let err = checker.is_consistent();
+            assert!(err.is_err());
+            eprintln!("{}", checker.create_dot_report(&err.unwrap_err()));
+        }
+        {
+            let (mut checker, zero, mut v) = make_graph();
+            v.subst(0, &(zero.clone() + 2.into()), &mut checker);
+            let err = checker.is_consistent();
+            assert!(err.is_err());
+            eprintln!("{}", checker.create_dot_report(&err.unwrap_err()));
+        }
     }
 }

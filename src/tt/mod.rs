@@ -67,7 +67,7 @@ impl Term {
             },
             Term::Bound(_) | Term::Level => (),
             Term::Sort(b) => if let Term::Sort(t) = t {
-                b.subst(db, t)
+                b.subst(db, t, &mut CONSTRAINT_CHECKER.lock())
             },
             Term::Lam(f, s) | Term::Pi(f, s) | Term::IRChoose(f, s) | Term::IRRecurse(f, s) => {
                 f.subst(db, t);
