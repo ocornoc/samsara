@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use miette::{miette, Result as MResult, Error as Report};
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
-pub use univ::{*, Term as Univ};
+pub use univ::*;
 
 lazy_static! {
     static ref CONSTRAINT_CHECKER: Mutex<UniChecker> = Default::default();

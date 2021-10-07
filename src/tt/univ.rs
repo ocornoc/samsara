@@ -156,16 +156,16 @@ impl From<Var> for NodeIndex<u32> {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub enum Term {
+pub enum Univ {
     Var(Option<DeBruijn>, Var),
-    Add(Box<Term>, Level),
-    Max(Vec<Term>),
-    Min(Vec<Term>),
+    Add(Box<Univ>, Level),
+    Max(Vec<Univ>),
+    Min(Vec<Univ>),
 }
 
-impl Term {
+impl Univ {
     fn sort_max_min(&mut self) {
-        if let Term::Max(ts) | Term::Min(ts) = self {
+        if let Univ::Max(ts) | Univ::Min(ts) = self {
             for t in ts.iter_mut() {
                 t.sort_max_min();
             }
@@ -176,13 +176,13 @@ impl Term {
 
     fn desingleton_max_min(&mut self) {
         match self {
-            Term::Var(..) => (),
-            Term::Add(t, _) => {
+            Univ::Var(..) => (),
+            Univ::Add(t, _) => {
                 t.desingleton_max_min();
             },
-            Term::Max(ts) | Term::Min(ts) => if let [t] = ts.as_mut_slice() { unsafe {
-                let t = (t as *const Term).read();
-                (self as *mut Term).write(t);
+            Univ::Max(ts) | Univ::Min(ts) => if let [t] = ts.as_mut_slice() { unsafe {
+                let t = (t as *const Univ).read();
+                (self as *mut Univ).write(t);
                 self.desingleton_max_min();
             } } else {
                 for t in ts {
@@ -194,41 +194,41 @@ impl Term {
 
     fn fold_add(&mut self) {
         match self {
-            Term::Var(..) => return,
-            Term::Add(t, l) => {
+            Univ::Var(..) => return,
+            Univ::Add(t, l) => {
                 let tp = t as *mut _;
                 match t.as_mut() {
-                    &mut Term::Var(db, v) => if *l == Level::default() {
-                        *self = Term::Var(db, v);
+                    &mut Univ::Var(db, v) => if *l == Level::default() {
+                        *self = Univ::Var(db, v);
                     },
-                    Term::Add(t2, l2) => {
+                    Univ::Add(t2, l2) => {
                         *l += *l2;
                         unsafe { replace_new_and_drop(tp, t2) };
                         self.fold_add();
                     },
-                    Term::Max(ts) => unsafe {
+                    Univ::Max(ts) => unsafe {
                         for t in ts.iter_mut() {
-                            let tp = t as *mut Term;
-                            tp.write(Term::Add(tp.read().into(), *l));
+                            let tp = t as *mut Univ;
+                            tp.write(Univ::Add(tp.read().into(), *l));
                             t.fold_add();
                         }
                         let ts = std::mem::take(ts);
                         drop_as_manually_drop(tp.read());
-                        (self as *mut Term).write(Term::Max(ts));
+                        (self as *mut Univ).write(Univ::Max(ts));
                     },
-                    Term::Min(ts) => unsafe {
+                    Univ::Min(ts) => unsafe {
                         for t in ts.iter_mut() {
-                            let tp = t as *mut Term;
-                            tp.write(Term::Add(tp.read().into(), *l));
+                            let tp = t as *mut Univ;
+                            tp.write(Univ::Add(tp.read().into(), *l));
                             t.fold_add();
                         }
                         let ts = std::mem::take(ts);
                         drop_as_manually_drop(tp.read());
-                        (self as *mut Term).write(Term::Min(ts));
+                        (self as *mut Univ).write(Univ::Min(ts));
                     },
                 }
             },
-            Term::Max(ts) | Term::Min(ts) => {
+            Univ::Max(ts) | Univ::Min(ts) => {
                 for t in ts.iter_mut() {
                     t.fold_add();
                 }
@@ -238,19 +238,19 @@ impl Term {
 
     fn distribute_max_min(&mut self) {
         match self {
-            Term::Var(..) => (),
-            Term::Add(t, _) => {
+            Univ::Var(..) => (),
+            Univ::Add(t, _) => {
                 t.distribute_max_min();
             },
-            Term::Max(ts) => {
-                if matches!(ts.last(), Some(Term::Min(_))) {
-                    if let Some(Term::Min(ts2)) = ts.pop() {
+            Univ::Max(ts) => {
+                if matches!(ts.last(), Some(Univ::Min(_))) {
+                    if let Some(Univ::Min(ts2)) = ts.pop() {
                         let mut new_ts = Vec::with_capacity(ts.len() * ts2.len());
 
                         for t in ts2 {
                             let mut ts = ts.clone();
                             ts.push(t);
-                            new_ts.push(Term::Max(ts));
+                            new_ts.push(Univ::Max(ts));
                         }
 
                         *ts = new_ts;
@@ -263,7 +263,7 @@ impl Term {
                     t.distribute_max_min();
                 }
             },
-            Term::Min(ts) => for t in ts {
+            Univ::Min(ts) => for t in ts {
                 t.distribute_max_min();
             },
         }
@@ -271,30 +271,30 @@ impl Term {
 
     fn fold_max_min(&mut self) {
         match self {
-            Term::Var(..) => (),
-            Term::Add(t, _) => {
+            Univ::Var(..) => (),
+            Univ::Add(t, _) => {
                 t.fold_max_min();
             },
-            Term::Max(ts) => {
+            Univ::Max(ts) => {
                 if let Some((mid, _)) = ts
                     .iter()
                     .enumerate()
-                    .find(|(_, t)| matches!(t, Term::Max(_)))
+                    .find(|(_, t)| matches!(t, Univ::Max(_)))
                 {
                     let end = ts
                         .iter()
                         .enumerate()
                         .skip(mid)
-                        .find(|(_, t)| !matches!(t, Term::Max(_)))
+                        .find(|(_, t)| !matches!(t, Univ::Max(_)))
                         .map(|(i, _)| i)
                         .unwrap_or(ts.len());
                     let mut drain = ts.drain(mid..end);
-                    let mut first = if let Some(Term::Max(first)) = drain.next() {
+                    let mut first = if let Some(Univ::Max(first)) = drain.next() {
                         first
                     } else {
                         unreachable!()
                     };
-                    while let Some(Term::Max(ts)) = drain.next() {
+                    while let Some(Univ::Max(ts)) = drain.next() {
                         first.extend(ts);
                     }
                     for t in first.iter_mut() {
@@ -304,19 +304,19 @@ impl Term {
                     ts.extend(first);
                 }
             },
-            Term::Min(ts) => {
+            Univ::Min(ts) => {
                 if let Some((mid, _)) = ts
                     .iter()
                     .enumerate()
-                    .find(|(_, t)| matches!(t, Term::Min(_)))
+                    .find(|(_, t)| matches!(t, Univ::Min(_)))
                 {
                     let mut drain = ts.drain(mid + 1..);
-                    let mut first = if let Some(Term::Min(first)) = drain.next() {
+                    let mut first = if let Some(Univ::Min(first)) = drain.next() {
                         first
                     } else {
                         unreachable!()
                     };
-                    while let Some(Term::Min(ts)) = drain.next() {
+                    while let Some(Univ::Min(ts)) = drain.next() {
                         first.extend(ts);
                     }
                     for t in first.iter_mut() {
@@ -342,23 +342,23 @@ impl Term {
 
     fn into_max(self) -> MResult<Box<[(Var, Level)]>> {
         Ok(match self {
-            Term::Var(_, v) => Box::new([(v, 0.into())]),
-            Term::Add(t, l) => match *t {
-                Term::Var(_, v) => Box::new([(v, l)]),
+            Univ::Var(_, v) => Box::new([(v, 0.into())]),
+            Univ::Add(t, l) => match *t {
+                Univ::Var(_, v) => Box::new([(v, l)]),
                 t => bail!(
                     "when compiling max constraint, had Term::Add([not var: {:?}], {:?})",
                     t,
                     l,
                 ),
             },
-            Term::Max(ts) => {
+            Univ::Max(ts) => {
                 let mut new = Vec::with_capacity(ts.len());
 
                 for t in ts {
                     new.push(match t {
-                        Term::Var(_, v) => (v, 0.into()),
-                        Term::Add(t, l) => match *t {
-                            Term::Var(_, v) => (v, l),
+                        Univ::Var(_, v) => (v, 0.into()),
+                        Univ::Add(t, l) => match *t {
+                            Univ::Var(_, v) => (v, l),
                             t => bail!(
                                 "when compiling max constraint, had Term::Max with \
                                  Term::Add([not var: {:?}], {:?})",
@@ -372,30 +372,30 @@ impl Term {
 
                 new.into_boxed_slice()
             },
-            Term::Min(ts) => bail!("when max compiling constraint, had Term::Min({:#?})", ts),
+            Univ::Min(ts) => bail!("when max compiling constraint, had Term::Min({:#?})", ts),
         })
     }
 
     fn into_min(self) -> MResult<Box<[(Var, Level)]>> {
         Ok(match self {
-            Term::Var(_, v) => Box::new([(v, 0.into())]),
-            Term::Add(t, l) => match *t {
-                Term::Var(_, v) => Box::new([(v, l)]),
+            Univ::Var(_, v) => Box::new([(v, 0.into())]),
+            Univ::Add(t, l) => match *t {
+                Univ::Var(_, v) => Box::new([(v, l)]),
                 t => bail!(
                     "when compiling min constraint, had Term::Add([not var: {:?}], {:?})",
                     t,
                     l,
                 ),
             },
-            Term::Max(ts) => bail!("when min compiling constraint, had Term::Max({:#?})", ts),
-            Term::Min(ts) => {
+            Univ::Max(ts) => bail!("when min compiling constraint, had Term::Max({:#?})", ts),
+            Univ::Min(ts) => {
                 let mut new = Vec::with_capacity(ts.len());
 
                 for t in ts {
                     new.push(match t {
-                        Term::Var(_, v) => (v, 0.into()),
-                        Term::Add(t, l) => match *t {
-                            Term::Var(_, v) => (v, l),
+                        Univ::Var(_, v) => (v, 0.into()),
+                        Univ::Add(t, l) => match *t {
+                            Univ::Var(_, v) => (v, l),
                             t => bail!(
                                 "when compiling min constraint, had Term::Min with \
                                  Term::Add([not var: {:?}], {:?})",
@@ -414,18 +414,18 @@ impl Term {
 
     pub fn shift(&mut self, by: SDeBruijn, cutoff: DeBruijn) {
         match self {
-            Term::Var(Some(db), _) => if *db >= cutoff {
+            Univ::Var(Some(db), _) => if *db >= cutoff {
                 if by.is_negative() {
                     *db -= by.unsigned_abs();
                 } else {
                     *db += by.unsigned_abs();
                 } 
             },
-            Term::Var(..) => (),
-            Term::Add(t, _) => {
+            Univ::Var(..) => (),
+            Univ::Add(t, _) => {
                 t.shift(by, cutoff);
             },
-            Term::Max(ts) | Term::Min(ts) => {
+            Univ::Max(ts) | Univ::Min(ts) => {
                 for t in ts {
                     t.shift(by, cutoff);
                 }
@@ -433,16 +433,16 @@ impl Term {
         }
     }
 
-    pub fn subst(&mut self, db: DeBruijn, new: &Term) {
+    pub fn subst(&mut self, db: DeBruijn, new: &Univ) {
         match self {
-            &mut Term::Var(Some(d), _) => if d == db {
+            &mut Univ::Var(Some(d), _) => if d == db {
                 self.clone_from(new);
             },
-            Term::Var(..) => (),
-            Term::Add(t, _) => {
+            Univ::Var(..) => (),
+            Univ::Add(t, _) => {
                 t.subst(db, new);
             },
-            Term::Max(ts) | Term::Min(ts) => {
+            Univ::Max(ts) | Univ::Min(ts) => {
                 for t in ts {
                     t.subst(db, new);
                 }
@@ -451,19 +451,19 @@ impl Term {
     }
 }
 
-impl AddAssign<Level> for Term {
+impl AddAssign<Level> for Univ {
     fn add_assign(&mut self, rhs: Level) {
-        *self = Term::Add(std::mem::replace(self, Term::Var(None, Var(0))).into(), rhs);
+        *self = Univ::Add(std::mem::replace(self, Univ::Var(None, Var(0))).into(), rhs);
     }
 }
 
-impl SubAssign<Level> for Term {
+impl SubAssign<Level> for Univ {
     fn sub_assign(&mut self, rhs: Level) {
         *self += -rhs;
     }
 }
 
-impl Add<Level> for Term {
+impl Add<Level> for Univ {
     type Output = Self;
 
     fn add(mut self, rhs: Level) -> Self::Output {
@@ -472,7 +472,7 @@ impl Add<Level> for Term {
     }
 }
 
-impl Sub<Level> for Term {
+impl Sub<Level> for Univ {
     type Output = Self;
 
     fn sub(mut self, rhs: Level) -> Self::Output {
@@ -491,9 +491,9 @@ pub enum ConstraintType {
 
 #[derive(Debug, Clone)]
 pub struct Constraint {
-    pub left: Term,
+    pub left: Univ,
     pub c: ConstraintType,
-    pub right: Term,
+    pub right: Univ,
 }
 
 impl Constraint {
@@ -716,17 +716,17 @@ mod tests {
     #[test]
     fn term_normalization() {
         let mut checker = UniChecker::default();
-        let v1 = Term::Var(None, checker.fresh_var());
-        let v2 = Term::Var(None, checker.fresh_var());
-        let v3 = Term::Var(None, checker.fresh_var());
-        let v4 = Term::Var(None, checker.fresh_var());
-        let v5 = Term::Var(None, checker.fresh_var());
-        let mut t = Term::Max(vec![
-            Term::Max(vec![
-                Term::Min(vec![
+        let v1 = Univ::Var(None, checker.fresh_var());
+        let v2 = Univ::Var(None, checker.fresh_var());
+        let v3 = Univ::Var(None, checker.fresh_var());
+        let v4 = Univ::Var(None, checker.fresh_var());
+        let v5 = Univ::Var(None, checker.fresh_var());
+        let mut t = Univ::Max(vec![
+            Univ::Max(vec![
+                Univ::Min(vec![
                     v1.clone() + 200.into(),
                     v2.clone(),
-                    Term::Min(vec![v3.clone()]),
+                    Univ::Min(vec![v3.clone()]),
                 ]),
             ]) - 9.into(),
             v4.clone(),
@@ -734,7 +734,7 @@ mod tests {
             v5.clone() + Level::new(69, 0),
         ]) + 5.into();
         t.normalize();
-        assert_eq!(t, Term::Max(vec![
+        assert_eq!(t, Univ::Max(vec![
             v1 + 196.into(),
             v2 - 4.into(),
             v3 - 4.into(),
@@ -746,10 +746,10 @@ mod tests {
     #[test]
     fn sat_graph() {
         let mut checker = UniChecker::default();
-        let v1 = Term::Var(None, checker.fresh_var());
-        let v2 = Term::Var(None, checker.fresh_var());
-        let v3 = Term::Var(None, checker.fresh_var());
-        let v4 = Term::Var(None, checker.fresh_var());
+        let v1 = Univ::Var(None, checker.fresh_var());
+        let v2 = Univ::Var(None, checker.fresh_var());
+        let v3 = Univ::Var(None, checker.fresh_var());
+        let v4 = Univ::Var(None, checker.fresh_var());
         checker.try_extend([
             Constraint {
                 left: v1.clone(),
@@ -788,10 +788,10 @@ mod tests {
     #[test]
     fn unsat_graph() {
         let mut checker = UniChecker::default();
-        let v1 = Term::Var(None, checker.fresh_var());
-        let v2 = Term::Var(None, checker.fresh_var());
-        let v3 = Term::Var(None, checker.fresh_var());
-        let v4 = Term::Var(None, checker.fresh_var());
+        let v1 = Univ::Var(None, checker.fresh_var());
+        let v2 = Univ::Var(None, checker.fresh_var());
+        let v3 = Univ::Var(None, checker.fresh_var());
+        let v4 = Univ::Var(None, checker.fresh_var());
         checker.try_extend([
             Constraint {
                 left: v1.clone(),
