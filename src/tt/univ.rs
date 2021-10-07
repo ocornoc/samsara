@@ -818,6 +818,11 @@ mod tests {
             },
             Constraint {
                 left: v4.clone(),
+                c: ConstraintType::Le,
+                right: v3.clone() - 2.into(),
+            },
+            Constraint {
+                left: v4.clone(),
                 c: ConstraintType::Lt,
                 right: v3.clone() - 2.into(),
             },
