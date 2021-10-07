@@ -157,7 +157,7 @@ impl From<Var> for NodeIndex<u32> {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Term {
-    Var(DeBruijn, Var),
+    Var(Option<DeBruijn>, Var),
     Add(Box<Term>, Level),
     Max(Vec<Term>),
     Min(Vec<Term>),
@@ -414,13 +414,14 @@ impl Term {
 
     pub fn shift(&mut self, by: SDeBruijn, cutoff: DeBruijn) {
         match self {
-            Term::Var(db, _) => if *db >= cutoff {
+            Term::Var(Some(db), _) => if *db >= cutoff {
                 if by.is_negative() {
                     *db -= by.unsigned_abs();
                 } else {
                     *db += by.unsigned_abs();
                 } 
             },
+            Term::Var(..) => (),
             Term::Add(t, _) => {
                 t.shift(by, cutoff);
             },
@@ -434,9 +435,10 @@ impl Term {
 
     pub fn subst(&mut self, db: DeBruijn, new: &Term) {
         match self {
-            &mut Term::Var(d, _) => if d == db {
+            &mut Term::Var(Some(d), _) => if d == db {
                 self.clone_from(new);
             },
+            Term::Var(..) => (),
             Term::Add(t, _) => {
                 t.subst(db, new);
             },
@@ -451,7 +453,7 @@ impl Term {
 
 impl AddAssign<Level> for Term {
     fn add_assign(&mut self, rhs: Level) {
-        *self = Term::Add(std::mem::replace(self, Term::Var(0, Var(0))).into(), rhs);
+        *self = Term::Add(std::mem::replace(self, Term::Var(None, Var(0))).into(), rhs);
     }
 }
 
@@ -714,11 +716,11 @@ mod tests {
     #[test]
     fn term_normalization() {
         let mut checker = UniChecker::default();
-        let v1 = Term::Var(0, checker.fresh_var());
-        let v2 = Term::Var(0, checker.fresh_var());
-        let v3 = Term::Var(0, checker.fresh_var());
-        let v4 = Term::Var(0, checker.fresh_var());
-        let v5 = Term::Var(0, checker.fresh_var());
+        let v1 = Term::Var(None, checker.fresh_var());
+        let v2 = Term::Var(None, checker.fresh_var());
+        let v3 = Term::Var(None, checker.fresh_var());
+        let v4 = Term::Var(None, checker.fresh_var());
+        let v5 = Term::Var(None, checker.fresh_var());
         let mut t = Term::Max(vec![
             Term::Max(vec![
                 Term::Min(vec![
@@ -744,10 +746,10 @@ mod tests {
     #[test]
     fn sat_graph() {
         let mut checker = UniChecker::default();
-        let v1 = Term::Var(0, checker.fresh_var());
-        let v2 = Term::Var(0, checker.fresh_var());
-        let v3 = Term::Var(0, checker.fresh_var());
-        let v4 = Term::Var(0, checker.fresh_var());
+        let v1 = Term::Var(None, checker.fresh_var());
+        let v2 = Term::Var(None, checker.fresh_var());
+        let v3 = Term::Var(None, checker.fresh_var());
+        let v4 = Term::Var(None, checker.fresh_var());
         checker.try_extend([
             Constraint {
                 left: v1.clone(),
@@ -786,10 +788,10 @@ mod tests {
     #[test]
     fn unsat_graph() {
         let mut checker = UniChecker::default();
-        let v1 = Term::Var(0, checker.fresh_var());
-        let v2 = Term::Var(0, checker.fresh_var());
-        let v3 = Term::Var(0, checker.fresh_var());
-        let v4 = Term::Var(0, checker.fresh_var());
+        let v1 = Term::Var(None, checker.fresh_var());
+        let v2 = Term::Var(None, checker.fresh_var());
+        let v3 = Term::Var(None, checker.fresh_var());
+        let v4 = Term::Var(None, checker.fresh_var());
         checker.try_extend([
             Constraint {
                 left: v1.clone(),

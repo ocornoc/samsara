@@ -1,4 +1,12 @@
+use std::cell::RefCell;
+use miette::{miette, Result as MResult, Error as Report};
+use lazy_static::lazy_static;
+use parking_lot::Mutex;
 pub use univ::{*, Term as Univ};
+
+lazy_static! {
+    static ref CONSTRAINT_CHECKER: Mutex<UniChecker> = Default::default();
+}
 
 pub type DeBruijn = u32;
 pub type SDeBruijn = i32;
@@ -17,14 +25,10 @@ pub enum Term {
     IRElement(Box<Term>),
     IRChoose(Box<Term>, Box<Term>),
     IRRecurse(Box<Term>, Box<Term>),
-    Constr(Box<Term>),
+    Constr(RefCell<Option<Box<Term>>>, Box<Term>),
 }
 
 impl Term {
-    fn is_sort(&self) -> bool {
-        matches!(self, Term::Sort(_))
-    }
-
     pub fn shift(&mut self, by: SDeBruijn, cutoff: DeBruijn) {
         match self {
             Term::Bound(b) if *b >= cutoff => if by.is_negative() {
@@ -44,9 +48,15 @@ impl Term {
                 l.shift(by, cutoff);
                 r.shift(by, cutoff);
             },
-            Term::IRCode(e) | Term::IRElement(e) | Term::Constr(e) => {
+            Term::IRCode(e) | Term::IRElement(e) => {
                 e.shift(by, cutoff);
             },
+            Term::Constr(ty, e) => {
+                e.shift(by, cutoff);
+                if let Some(ty) = ty.borrow_mut().as_mut() {
+                    ty.shift(by, cutoff);
+                }
+            }
         }
     }
 
@@ -67,9 +77,15 @@ impl Term {
                 l.subst(db, t);
                 r.subst(db, t);
             },
-            Term::IRCode(e) | Term::IRElement(e) | Term::Constr(e) => {
+            Term::IRCode(e) | Term::IRElement(e) => {
                 e.subst(db, t);
             },
+            Term::Constr(ty, e) => {
+                e.subst(db, t);
+                if let Some(ty) = ty.borrow_mut().as_mut() {
+                    ty.subst(db, t);
+                }
+            }
         }
     }
 
@@ -87,7 +103,7 @@ impl Term {
                     e.shift(-1, 1);
                     e.normalize_mut();
                     *self = e.as_ref().clone();
-                } else if let Term::Constr(code) = l.as_mut() {
+                } else if let Term::Constr(ty, code) = l.as_mut() {
                     match code.as_mut() {
                         Term::IRElement(d) => {
                             *self = Term::App(r.clone(), d.clone());
@@ -99,7 +115,7 @@ impl Term {
                             let mut r = r.clone();
                             r.shift(1, 0);
                             let mut left = Term::App(u, Term::Bound(0).into());
-                            left = Term::Constr(left.into());
+                            left = Term::Constr(ty.clone(), left.into());
                             left = Term::App(left.into(), r.clone()).normalize();
                             *self = Term::Pi(a.clone(), left.into());
                         },
@@ -110,7 +126,10 @@ impl Term {
                             r.shift(2, 0);
                             let mut i1 = i.clone();
                             i1.shift(1, 0);
-                            let mut term = Term::Constr(Term::App(v, Term::Bound(1).into()).into());
+                            let mut term = Term::Constr(
+                                ty.clone(),
+                                Term::App(v, Term::Bound(1).into()).into(),
+                            );
                             term = Term::App(term.into(), r.clone()).normalize();
                             term = Term::Pi(
                                 Term::Pi(i1, Term::App(r, Term::App(
@@ -119,8 +138,9 @@ impl Term {
                                 ).into()).normalize().into()).into(),
                                 term.into(),
                             );
+                            let ty = ty.get_mut().as_mut().unwrap().clone();
                             *self = Term::Pi(
-                                Term::Pi(i.clone(), todo!()).into(),
+                                Term::Pi(i.clone(), ty).into(),
                                 term.into(),
                             );
                         },
@@ -132,11 +152,19 @@ impl Term {
                     r.normalize_mut();
                 }
             },
-            Term::IRCode(_) => todo!(),
-            Term::IRElement(_) => todo!(),
-            Term::IRChoose(_, _) => todo!(),
-            Term::IRRecurse(_, _) => todo!(),
-            Term::Constr(_) => todo!(),
+            Term::IRCode(t) | Term::IRElement(t) => {
+                t.normalize_mut()
+            },
+            Term::IRChoose(f, s) | Term::IRRecurse(f, s) => {
+                f.normalize_mut();
+                s.normalize_mut();
+            },
+            Term::Constr(f, s) => {
+                if let Some(f) = f.get_mut() {
+                    f.normalize_mut();
+                }
+                s.normalize_mut();
+            }
         }
     }
 
@@ -150,49 +178,223 @@ impl Term {
 pub struct Context(pub Vec<Term>);
 
 impl Context {
-    pub fn infer_ty(&mut self, t: &Term) -> Option<Term> {
+    #[cold]
+    #[inline(never)]
+    fn db_index_failed(&self, db: u32) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn lam_arg_ty_not_sort(&self, ty: &Term, tyty: Term, e: &Term) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn app_l_not_pi(&self, l: &Term, lty: Term, r: &Term) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn app_arg_ty_not_ll(&self, l: &Term, r: &Term, ll: Term, lr: Term, rty: Term) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn pi_arg_ty_not_sort(&self, ty: &Term, tyty: Term, ety: &Term) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn pi_e_ty_not_sort(&self, ty: &Term, tyty: Univ, ety: &Term, etyty: Term) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_code_not_sort(&self, t: &Term, ty: Term) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_choose_a_not_sort(&self, a: &Term, aty: Term, f: &Term) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_choose_fty_not_pi(&self, a: &Term, aty: Term, f: &Term, fty: Term) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_choose_pty_not_a(&self, a: &Term, aty: Term, f: &Term, pty: Term, out: Term) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_choose_outty_not_sort(
+        &self,
+        a: &Term,
+        aty: Term,
+        f: &Term,
+        pty: Term,
+        out: Term,
+        outty: Term,
+    ) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_choose_f_out_not_ir_code(
+        &self,
+        a: &Term,
+        aty: Term,
+        f: &Term,
+        pty: Term,
+        out: Term,
+    ) -> Report {
+        todo!()
+    }
+
+    pub fn infer_ty(&mut self, t: &Term) -> MResult<Term> {
         match t {
-            Term::Sort(_) => Some(t.clone()), // FIXME: atm only one universe level
-            &Term::Bound(db) => self.0.get(db as usize).cloned(),
+            Term::Sort(t) => {
+                let mut checker = CONSTRAINT_CHECKER.lock();
+                let v = checker.fresh_var();
+                checker.insert_constraint(Constraint {
+                    left: t.clone(),
+                    c: ConstraintType::Lt,
+                    right: Univ::Var(None, v),
+                })?;
+                Ok(Term::Sort(Univ::Var(None, v)))
+            },
+            &Term::Bound(db) => self.0.get(self.0.len() - db as usize - 1).cloned().ok_or_else(||
+                self.db_index_failed(db)
+            ),
+            Term::Level => Ok(Term::Sort(Univ::Var(None, {
+                let mut checker = CONSTRAINT_CHECKER.lock();
+                let v = checker.fresh_var();
+                let zero = checker.zero();
+                checker.insert_constraint(Constraint {
+                    left: Univ::Var(None, zero) + Level::new(1, 0),
+                    c: ConstraintType::Le,
+                    right: Univ::Var(None, v),
+                })?;
+                v
+            }))),
             Term::Lam(ty, e) => {
-                if !self.infer_ty(ty)?.normalize().is_sort() {
-                    return None;
+                let tyty = self.infer_ty(ty)?.normalize();
+                if !matches!(tyty, Term::Sort(_)) {
+                    return Err(self.lam_arg_ty_not_sort(ty, tyty, e));
                 }
                 self.0.push(ty.as_ref().clone());
-                let e = self.infer_ty(e);
+                let e = self.infer_ty(e)?;
                 self.0.pop();
-                e
+                Ok(Term::Pi(ty.clone(), Box::new(e)))
             },
             Term::App(l, r) => match self.infer_ty(l)?.normalize() {
                 Term::Pi(ll, lr) => {
                     let rty = self.infer_ty(r)?.normalize();
-                    if *ll == rty {
-                        Some(*lr)
+                    if *ll != rty {
+                        Err(self.app_arg_ty_not_ll(l, r, *ll, *lr, rty))
                     } else {
-                        None
+                        Ok(*lr)
                     }
                 },
-                _ => None,
+                lty => Err(self.app_l_not_pi(l, lty, r)),
             },
             Term::Pi(ty, e) => {
-                let _ty_sort = match self.infer_ty(ty)?.normalize() {
+                let ty_sort = match self.infer_ty(ty)?.normalize() {
                     Term::Sort(u) => u,
-                    _ => return None,
+                    tyty => {
+                        return Err(self.pi_arg_ty_not_sort(ty, tyty, e));
+                    },
                 };
                 self.0.push(ty.as_ref().clone());
-                let e = self.infer_ty(e);
+                let ety = self.infer_ty(e)?.normalize();
                 self.0.pop();
-                match self.infer_ty(&e?)?.normalize() {
-                    Term::Sort(e_sort) => Some(Term::Sort(e_sort)), // FIXME: no universe checking
-                    _ => None,
+                match self.infer_ty(&ety)?.normalize() {
+                    Term::Sort(e_sort) => Ok(Term::Sort(Univ::Var(None, {
+                        let mut checker = CONSTRAINT_CHECKER.lock();
+                        let v = checker.fresh_var();
+                        checker.insert_constraint(Constraint {
+                            left: Univ::Max(vec![ty_sort, e_sort]),
+                            c: ConstraintType::Lt,
+                            right: Univ::Var(None, v),
+                        })?;
+                        v
+                    }))),
+                    ety => Err(self.pi_e_ty_not_sort(ty, ty_sort, e, ety)),
                 }
             },
-            Term::IRCode(_) => todo!(),
-            Term::IRElement(_) => todo!(),
-            Term::IRChoose(_, _) => todo!(),
+            Term::IRCode(t) => match self.infer_ty(t)?.normalize() {
+                Term::Sort(t) => {
+                    let mut checker = CONSTRAINT_CHECKER.lock();
+                    let v = checker.fresh_var();
+                    checker.insert_constraint(Constraint {
+                        left: t,
+                        c: ConstraintType::Lt,
+                        right: Univ::Var(None, v),
+                    })?;
+                    Ok(Term::Sort(Univ::Var(None, v)))
+                },
+                ty => Err(self.ir_code_not_sort(t, ty)),
+            },
+            Term::IRElement(d) => Ok(Term::IRCode(Box::new(self.infer_ty(d)?))),
+            Term::IRChoose(a, f) => {
+                let a_sort = match self.infer_ty(a)?.normalize() {
+                    Term::Sort(u) => u,
+                    aty => {
+                        return Err(self.ir_choose_a_not_sort(a, aty, f));
+                    },
+                };
+                self.0.push(Term::Sort(a_sort.clone()));
+                let fty = self.infer_ty(f)?.normalize();
+                self.0.pop();
+                match fty {
+                    Term::Pi(pty, out) if &pty != a =>
+                        Err(self.ir_choose_pty_not_a(a, Term::Sort(a_sort), f, *pty, *out)),
+                    Term::Pi(pty, out) => match *out {
+                        Term::IRCode(out) => match self.infer_ty(&out)?.normalize() {
+                            Term::Sort(outty_sort) => {
+                                CONSTRAINT_CHECKER.lock().insert_constraint(Constraint {
+                                    left: a_sort,
+                                    c: ConstraintType::Le,
+                                    right: outty_sort,
+                                })?;
+                                Ok(Term::IRCode(out))
+                            },
+                            outty => Err(self.ir_choose_outty_not_sort(
+                                a,
+                                Term::Sort(a_sort),
+                                f,
+                                *pty,
+                                *out,
+                                outty,
+                            )),
+                        },
+                        out => Err(self.ir_choose_f_out_not_ir_code(
+                            a,
+                            Term::Sort(a_sort),
+                            f,
+                            *pty,
+                            out,
+                        )),
+                    },
+                    fty => Err(self.ir_choose_fty_not_pi(a, Term::Sort(a_sort), f, fty)),
+                }
+            },
             Term::IRRecurse(_, _) => todo!(),
-            Term::Constr(_) => todo!(),
-            Term::Level => todo!(),
+            Term::Constr(_, _) => todo!(),
         }
     }
 }
