@@ -385,7 +385,8 @@ impl Context {
                     &out,
                 ));
                 let out = match out {
-                    Term::IRCode(out) => {
+                    Term::IRCode(mut out) => {
+                        out.shift(-2, 2);
                         let out_sort = self.infer_ty(&out)?.into_sort().map_err(|outty| {
                             self.ir_choose_outty_not_sort(a, &a_sort, f, &pty, &out, &outty)
                         })?;
