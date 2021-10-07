@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use miette::{miette, Result as MResult, Error as Report};
+use miette::{miette, ensure, bail, Result as MResult, Error as Report};
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 pub use univ::*;
@@ -244,7 +244,7 @@ impl Context {
 
     #[cold]
     #[inline(never)]
-    fn ir_choose_fty_not_pi(&self, a: &Term, aty: &Term, f: &Term, fty: &Term) -> Report {
+    fn ir_choose_fty_not_pi(&self, a: &Term, a_sort: &Univ, f: &Term, fty: &Term) -> Report {
         todo!()
     }
 
@@ -253,7 +253,7 @@ impl Context {
     fn ir_choose_pty_not_a(
         &self,
         a: &Term,
-        aty: &Term,
+        aty: &Univ,
         f: &Term,
         pty: &Term,
         out: &Term,
@@ -266,7 +266,7 @@ impl Context {
     fn ir_choose_outty_not_sort(
         &self,
         a: &Term,
-        aty: &Term,
+        aty: &Univ,
         f: &Term,
         pty: &Term,
         out: &Term,
@@ -280,7 +280,7 @@ impl Context {
     fn ir_choose_f_out_not_ir_code(
         &self,
         a: &Term,
-        aty: &Term,
+        aty: &Univ,
         f: &Term,
         pty: &Term,
         out: &Term,
@@ -370,47 +370,36 @@ impl Context {
             },
             Term::IRElement(d) => Ok(Term::IRCode(Box::new(self.infer_ty(d)?))),
             Term::IRChoose(a, f) => {
-                let a_sort = match self.infer_ty(a)?.normalize() {
-                    Term::Sort(u) => u,
-                    aty => {
-                        return Err(self.ir_choose_a_not_sort(a, &aty, f));
-                    },
-                };
+                let a_sort = self.infer_ty(a)?.normalize().into_sort().map_err(|aty| {
+                    self.ir_choose_a_not_sort(a, &aty, f)
+                })?;
                 self.0.push(Term::Sort(a_sort.clone()));
-                let fty = self.infer_ty(f)?.normalize();
-                self.0.pop();
-                match fty {
-                    Term::Pi(pty, out) if &pty != a =>
-                        Err(self.ir_choose_pty_not_a(a, &Term::Sort(a_sort), f, &pty, &out)),
-                    Term::Pi(pty, out) => match *out {
-                        Term::IRCode(out) => match self.infer_ty(&out)?.normalize() {
-                            Term::Sort(outty_sort) => {
-                                CONSTRAINT_CHECKER.lock().insert_constraint(Constraint {
-                                    left: a_sort,
-                                    c: ConstraintType::Le,
-                                    right: outty_sort,
-                                })?;
-                                Ok(Term::IRCode(out))
-                            },
-                            outty => Err(self.ir_choose_outty_not_sort(
-                                a,
-                                &Term::Sort(a_sort),
-                                f,
-                                &pty,
-                                &out,
-                                &outty,
-                            )),
-                        },
-                        out => Err(self.ir_choose_f_out_not_ir_code(
-                            a,
-                            &Term::Sort(a_sort),
-                            f,
-                            &pty,
-                            &out,
-                        )),
+                let (pty, out) = self.infer_ty(f)?.normalize().into_pi().map_err(|fty| {
+                    self.ir_choose_fty_not_pi(a, &a_sort, f, &fty)
+                })?;
+                ensure!(pty == **a, self.ir_choose_pty_not_a(
+                    a,
+                    &a_sort,
+                    f,
+                    &pty,
+                    &out,
+                ));
+                let out = match out {
+                    Term::IRCode(out) => {
+                        let out_sort = self.infer_ty(&out)?.into_sort().map_err(|outty| {
+                            self.ir_choose_outty_not_sort(a, &a_sort, f, &pty, &out, &outty)
+                        })?;
+                        CONSTRAINT_CHECKER.lock().insert_constraint(Constraint {
+                            left: a_sort,
+                            c: ConstraintType::Le,
+                            right: out_sort,
+                        })?;
+                        Term::IRCode(out)
                     },
-                    fty => Err(self.ir_choose_fty_not_pi(a, &Term::Sort(a_sort), f, &fty)),
-                }
+                    out => bail!(self.ir_choose_f_out_not_ir_code(a, &a_sort, f, &pty, &out)),
+                };
+                self.0.pop();
+                Ok(out)
             },
             Term::IRRecurse(_, _) => todo!(),
             Term::Constr(_, _) => todo!(),
