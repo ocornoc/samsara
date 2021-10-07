@@ -589,30 +589,26 @@ impl UniChecker {
         node.into()
     }
 
-    pub fn clone_var(&mut self, var: Var) -> Var {
-        let old = var.into();
-        let new = self.graph.add_node(NodeData::Var(self.graph.node_count() as u32));
-        let mut in_walker = self.graph.neighbors_directed(old, Direction::Incoming).detach();
-        let mut out_walker = self.graph.neighbors_directed(old, Direction::Outgoing).detach();
+    fn clone_constraints(&mut self, old: Var, new: Var) {
+        let orign = old.into();
+        let newn = new.into();
+        let mut in_walker = self.graph.neighbors_directed(orign, Direction::Incoming).detach();
+        let mut out_walker = self.graph.neighbors_directed(orign, Direction::Outgoing).detach();
 
         while let Some((e, neighbor)) = in_walker.next(&self.graph) {
-            self.graph.add_edge(neighbor, new, self.graph[e].clone());
+            self.add_edge(neighbor, newn, self.graph[e].clone());
         }
 
         while let Some((e, neighbor)) = out_walker.next(&self.graph) {
-            self.graph.add_edge(new, neighbor, self.graph[e].clone());
+            self.add_edge(newn, neighbor, self.graph[e].clone());
         }
-
-        new.into()
     }
 
     pub fn zero(&self) -> Var {
         self.zero.into()
     }
 
-    fn add_edge(&mut self, a: Var, b: Var, weight: Level) {
-        let a = a.into();
-        let b = b.into();
+    fn add_edge(&mut self, a: NodeIndex<u32>, b: NodeIndex<u32>, weight: Level) {
         if let Some(edge) = self.graph.find_edge(a, b) {
             if weight < self.graph[edge] {
                 self.graph[edge] = weight;
@@ -624,7 +620,7 @@ impl UniChecker {
 
     pub fn insert_constraint(&mut self, c: Constraint) -> MResult<()> {
         for c in c.compile()?.into_constraints() {
-            self.add_edge(c.greater_var, c.lesser_var, c.edge_weight());
+            self.add_edge(c.greater_var.into(), c.lesser_var.into(), c.edge_weight());
         }
 
         Ok(())
