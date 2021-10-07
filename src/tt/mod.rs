@@ -202,55 +202,62 @@ impl Context {
 
     #[cold]
     #[inline(never)]
-    fn lam_arg_ty_not_sort(&self, ty: &Term, tyty: Term, e: &Term) -> Report {
+    fn lam_arg_ty_not_sort(&self, ty: &Term, tyty: &Term, e: &Term) -> Report {
         todo!()
     }
 
     #[cold]
     #[inline(never)]
-    fn app_l_not_pi(&self, l: &Term, lty: Term, r: &Term) -> Report {
+    fn app_l_not_pi(&self, l: &Term, lty: &Term, r: &Term) -> Report {
         todo!()
     }
 
     #[cold]
     #[inline(never)]
-    fn app_arg_ty_not_ll(&self, l: &Term, r: &Term, ll: Term, lr: Term, rty: Term) -> Report {
+    fn app_arg_ty_not_ll(&self, l: &Term, r: &Term, ll: &Term, lr: &Term, rty: &Term) -> Report {
         todo!()
     }
 
     #[cold]
     #[inline(never)]
-    fn pi_arg_ty_not_sort(&self, ty: &Term, tyty: Term, ety: &Term) -> Report {
+    fn pi_arg_ty_not_sort(&self, ty: &Term, tyty: &Term, ety: &Term) -> Report {
         todo!()
     }
 
     #[cold]
     #[inline(never)]
-    fn pi_e_ty_not_sort(&self, ty: &Term, tyty: Univ, ety: &Term, etyty: Term) -> Report {
+    fn pi_e_ty_not_sort(&self, ty: &Term, tyty: &Univ, e: &Term, ety: &Term) -> Report {
         todo!()
     }
 
     #[cold]
     #[inline(never)]
-    fn ir_code_not_sort(&self, t: &Term, ty: Term) -> Report {
+    fn ir_code_not_sort(&self, t: &Term, ty: &Term) -> Report {
         todo!()
     }
 
     #[cold]
     #[inline(never)]
-    fn ir_choose_a_not_sort(&self, a: &Term, aty: Term, f: &Term) -> Report {
+    fn ir_choose_a_not_sort(&self, a: &Term, aty: &Term, f: &Term) -> Report {
         todo!()
     }
 
     #[cold]
     #[inline(never)]
-    fn ir_choose_fty_not_pi(&self, a: &Term, aty: Term, f: &Term, fty: Term) -> Report {
+    fn ir_choose_fty_not_pi(&self, a: &Term, aty: &Term, f: &Term, fty: &Term) -> Report {
         todo!()
     }
 
     #[cold]
     #[inline(never)]
-    fn ir_choose_pty_not_a(&self, a: &Term, aty: Term, f: &Term, pty: Term, out: Term) -> Report {
+    fn ir_choose_pty_not_a(
+        &self,
+        a: &Term,
+        aty: &Term,
+        f: &Term,
+        pty: &Term,
+        out: &Term,
+    ) -> Report {
         todo!()
     }
 
@@ -259,11 +266,11 @@ impl Context {
     fn ir_choose_outty_not_sort(
         &self,
         a: &Term,
-        aty: Term,
+        aty: &Term,
         f: &Term,
-        pty: Term,
-        out: Term,
-        outty: Term,
+        pty: &Term,
+        out: &Term,
+        outty: &Term,
     ) -> Report {
         todo!()
     }
@@ -273,10 +280,10 @@ impl Context {
     fn ir_choose_f_out_not_ir_code(
         &self,
         a: &Term,
-        aty: Term,
+        aty: &Term,
         f: &Term,
-        pty: Term,
-        out: Term,
+        pty: &Term,
+        out: &Term,
     ) -> Report {
         todo!()
     }
@@ -310,7 +317,7 @@ impl Context {
             Term::Lam(ty, e) => {
                 let tyty = self.infer_ty(ty)?.normalize();
                 if !matches!(tyty, Term::Sort(_)) {
-                    return Err(self.lam_arg_ty_not_sort(ty, tyty, e));
+                    return Err(self.lam_arg_ty_not_sort(ty, &tyty, e));
                 }
                 self.0.push(ty.as_ref().clone());
                 let e = self.infer_ty(e)?;
@@ -321,36 +328,32 @@ impl Context {
                 Term::Pi(ll, lr) => {
                     let rty = self.infer_ty(r)?.normalize();
                     if *ll != rty {
-                        Err(self.app_arg_ty_not_ll(l, r, *ll, *lr, rty))
+                        Err(self.app_arg_ty_not_ll(l, r, &ll, &lr, &rty))
                     } else {
                         Ok(*lr)
                     }
                 },
-                lty => Err(self.app_l_not_pi(l, lty, r)),
+                lty => Err(self.app_l_not_pi(l, &lty, r)),
             },
             Term::Pi(ty, e) => {
-                let ty_sort = match self.infer_ty(ty)?.normalize() {
-                    Term::Sort(u) => u,
-                    tyty => {
-                        return Err(self.pi_arg_ty_not_sort(ty, tyty, e));
-                    },
-                };
+                let ty_sort = self.infer_ty(ty)?.normalize().into_sort().map_err(|tyty| {
+                    self.pi_arg_ty_not_sort(ty, &tyty, e)
+                })?;
                 self.0.push(ty.as_ref().clone());
-                let ety = self.infer_ty(e)?.normalize();
+                let e_sort = self.infer_ty(e)?.normalize().into_sort().map_err(|ety| {
+                    self.pi_e_ty_not_sort(ty, &ty_sort, e, &ety)
+                })?;
                 self.0.pop();
-                match self.infer_ty(&ety)?.normalize() {
-                    Term::Sort(e_sort) => Ok(Term::Sort(Univ::Var(None, {
-                        let mut checker = CONSTRAINT_CHECKER.lock();
-                        let v = checker.fresh_var();
-                        checker.insert_constraint(Constraint {
-                            left: Univ::Max(vec![ty_sort, e_sort]),
-                            c: ConstraintType::Lt,
-                            right: Univ::Var(None, v),
-                        })?;
-                        v
-                    }))),
-                    ety => Err(self.pi_e_ty_not_sort(ty, ty_sort, e, ety)),
-                }
+                Ok(Term::Sort(Univ::Var(None, {
+                    let mut checker = CONSTRAINT_CHECKER.lock();
+                    let v = checker.fresh_var();
+                    checker.insert_constraint(Constraint {
+                        left: Univ::Max(vec![ty_sort, e_sort]),
+                        c: ConstraintType::Lt,
+                        right: Univ::Var(None, v),
+                    })?;
+                    v
+                })))
             },
             Term::IRCode(t) => match self.infer_ty(t)?.normalize() {
                 Term::Sort(t) => {
@@ -363,14 +366,14 @@ impl Context {
                     })?;
                     Ok(Term::Sort(Univ::Var(None, v)))
                 },
-                ty => Err(self.ir_code_not_sort(t, ty)),
+                ty => Err(self.ir_code_not_sort(t, &ty)),
             },
             Term::IRElement(d) => Ok(Term::IRCode(Box::new(self.infer_ty(d)?))),
             Term::IRChoose(a, f) => {
                 let a_sort = match self.infer_ty(a)?.normalize() {
                     Term::Sort(u) => u,
                     aty => {
-                        return Err(self.ir_choose_a_not_sort(a, aty, f));
+                        return Err(self.ir_choose_a_not_sort(a, &aty, f));
                     },
                 };
                 self.0.push(Term::Sort(a_sort.clone()));
@@ -378,7 +381,7 @@ impl Context {
                 self.0.pop();
                 match fty {
                     Term::Pi(pty, out) if &pty != a =>
-                        Err(self.ir_choose_pty_not_a(a, Term::Sort(a_sort), f, *pty, *out)),
+                        Err(self.ir_choose_pty_not_a(a, &Term::Sort(a_sort), f, &pty, &out)),
                     Term::Pi(pty, out) => match *out {
                         Term::IRCode(out) => match self.infer_ty(&out)?.normalize() {
                             Term::Sort(outty_sort) => {
@@ -391,22 +394,22 @@ impl Context {
                             },
                             outty => Err(self.ir_choose_outty_not_sort(
                                 a,
-                                Term::Sort(a_sort),
+                                &Term::Sort(a_sort),
                                 f,
-                                *pty,
-                                *out,
-                                outty,
+                                &pty,
+                                &out,
+                                &outty,
                             )),
                         },
                         out => Err(self.ir_choose_f_out_not_ir_code(
                             a,
-                            Term::Sort(a_sort),
+                            &Term::Sort(a_sort),
                             f,
-                            *pty,
-                            out,
+                            &pty,
+                            &out,
                         )),
                     },
-                    fty => Err(self.ir_choose_fty_not_pi(a, Term::Sort(a_sort), f, fty)),
+                    fty => Err(self.ir_choose_fty_not_pi(a, &Term::Sort(a_sort), f, &fty)),
                 }
             },
             Term::IRRecurse(_, _) => todo!(),
