@@ -435,7 +435,36 @@ impl Univ {
 
     pub fn subst(&mut self, db: DeBruijn, new: &Univ) {
         match self {
-            &mut Univ::Var(Some(d), _) => if d == db {
+            &mut Univ::Var(Some(d), v) => if d == db {
+                let mut checker = super::CONSTRAINT_CHECKER.lock();
+                // if new can be `max`, then clone all constraints into `v` onto `new`
+                if let Ok(max) = new.clone().into_max() {
+                    let walker = checker.graph
+                        .neighbors_directed(v.into(), Direction::Incoming)
+                        .detach();
+                    for (vnew, l) in Vec::from(max) {
+                        let mut walker = walker.clone();
+                        let vnew = vnew.clone().into();
+                        while let Some((e, n)) = walker.next(&checker.graph) {
+                            let weight = checker.graph[e] + l;
+                            checker.add_edge(n, vnew, weight);
+                        }
+                    }
+                }
+                // if new can be `min`, then clone all constraints from `v` onto `new`
+                if let Ok(min) = new.clone().into_min() {
+                    let walker = checker.graph
+                        .neighbors_directed(v.into(), Direction::Outgoing)
+                        .detach();
+                    for (vnew, l) in Vec::from(min) {
+                        let mut walker = walker.clone();
+                        let vnew = vnew.clone().into();
+                        while let Some((e, n)) = walker.next(&checker.graph) {
+                            let weight = checker.graph[e] - l;
+                            checker.add_edge(vnew, n, weight);
+                        }
+                    }
+                }
                 self.clone_from(new);
             },
             Univ::Var(..) => (),
