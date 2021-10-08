@@ -23,7 +23,7 @@ macro_rules! term_ctor {
     };
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Term {
     Sort(Univ),
     Level,
