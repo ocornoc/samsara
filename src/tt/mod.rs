@@ -369,7 +369,6 @@ impl Context {
         r: &Term,
         pty: &Term,
         out: &Term,
-        ppty: &Term,
     ) -> Report {
         todo!()
     }
@@ -551,8 +550,8 @@ impl Context {
                     self.ir_rec_rty_not_pi(i, &i_sort, r, &rty)
                 })?;
                 ensure!(matches!(out, Term::IRCode(_)), self.ir_rec_out_not_code(t, &out));
-                let (ppty, pout) = self.infer_ty(&pty)?.into_pi().map_err(|ppty| {
-                    self.ir_rec_pty_not_pi(i, &i_sort, r, &pty, &out, &ppty)
+                let (ppty, pout) = pty.into_pi().map_err(|pty| {
+                    self.ir_rec_pty_not_pi(i, &i_sort, r, &pty, &out)
                 })?;
                 ensure!(ppty == **i, self.ir_rec_ppty_not_i(t, i, &ppty));
                 if let Term::IRCode(out) = &mut out {
