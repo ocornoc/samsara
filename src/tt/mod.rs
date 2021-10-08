@@ -288,6 +288,86 @@ impl Context {
         todo!()
     }
 
+    #[cold]
+    #[inline(never)]
+    fn ir_rec_i_not_sort(&self, i: &Term, ity: &Term, r: &Term) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_rec_rty_not_pi(&self, i: &Term, i_sort: &Univ, r: &Term, rty: &Term) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_rec_pty_not_pi(
+        &self,
+        i: &Term,
+        i_sort: &Univ,
+        r: &Term,
+        pty: &Term,
+        out: &Term,
+        ppty: &Term,
+    ) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_rec_ppty_not_i(
+        &self,
+        t: &Term,
+        i: &Term,
+        ppty: &Term,
+    ) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_rec_out_not_code(
+        &self,
+        t: &Term,
+        out: &Term,
+    ) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_rec_pout_not_out(
+        &self,
+        t: &Term,
+        out: &Term,
+        pout: &Term,
+    ) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_rec_out_ty_not_sort(
+        &self,
+        t: &Term,
+        out: &Term,
+        outty: &Term,
+    ) -> Report {
+        todo!()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn ir_constr_codety_not_code(
+        &self,
+        t: &Term,
+        code: &Term,
+        codety: &Term,
+    ) -> Report {
+        todo!()
+    }
+
     pub fn infer_ty(&mut self, t: &Term) -> MResult<Term> {
         match t {
             Term::Sort(t) => {
@@ -402,8 +482,55 @@ impl Context {
                 self.0.pop();
                 Ok(out)
             },
-            Term::IRRecurse(_, _) => todo!(),
-            Term::Constr(_, _) => todo!(),
+            Term::IRRecurse(i, r) => {
+                let i_sort = self.infer_ty(i)?.normalize().into_sort().map_err(|ity| {
+                    self.ir_rec_i_not_sort(i, &ity, r)
+                })?;
+                self.0.push(Term::Sort(i_sort.clone()));
+                let (pty, mut out) = self.infer_ty(r)?.normalize().into_pi().map_err(|rty| {
+                    self.ir_rec_rty_not_pi(i, &i_sort, r, &rty)
+                })?;
+                ensure!(matches!(out, Term::IRCode(_)), self.ir_rec_out_not_code(t, &out));
+                let (ppty, pout) = self.infer_ty(&pty)?.into_pi().map_err(|ppty| {
+                    self.ir_rec_pty_not_pi(i, &i_sort, r, &pty, &out, &ppty)
+                })?;
+                ensure!(ppty == **i, self.ir_rec_ppty_not_i(t, i, &ppty));
+                if let Term::IRCode(out) = &mut out {
+                    ensure!(out.as_ref() == &pout, self.ir_rec_pout_not_out(t, out, &pout));
+                    out.shift(-2, 0);
+                    let out_sort = self.infer_ty(out)?.normalize().into_sort().map_err(|outty| {
+                        self.ir_rec_out_ty_not_sort(t, out, &outty)
+                    })?;
+                    CONSTRAINT_CHECKER.lock().insert_constraint(Constraint {
+                        left: i_sort,
+                        c: ConstraintType::Le,
+                        right: out_sort,
+                    })?;
+                }
+                self.0.pop();
+                Ok(out)
+            },
+            Term::Constr(d, code) => {
+                let mut d = if let Some(d) = d.borrow().as_ref() {
+                    d.clone()
+                } else {
+                    let codety = match self.infer_ty(code)?.normalize() {
+                        Term::IRCode(codety) => codety,
+                        codety => bail!(self.ir_constr_codety_not_code(t, code, &codety)),
+                    };
+                    *d.borrow_mut() = Some(codety.clone());
+                    codety
+                };
+                d.shift(1, 0);
+                let (v1, v2) = {
+                    let mut checker = CONSTRAINT_CHECKER.lock();
+                    (checker.fresh_var(), checker.fresh_var())
+                };
+                Ok(Term::Pi(code.clone(), Term::Pi(
+                    Term::Pi(d, Term::Sort(Univ::Var(None, v1)).into()).into(),
+                    Term::Sort(Univ::Var(None, v2)).into(),
+                ).into()))
+            },
         }
     }
 }
