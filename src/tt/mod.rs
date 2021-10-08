@@ -6,6 +6,7 @@ pub use univ::*;
 
 lazy_static! {
     static ref CONSTRAINT_CHECKER: Mutex<UniChecker> = Default::default();
+    static ref BOOL_TYPE: Var = CONSTRAINT_CHECKER.lock().fresh_var();
 }
 
 pub type DeBruijn = u32;
@@ -563,7 +564,7 @@ impl Context {
                     Term::Sort(Univ::Var(None, v2)).into(),
                 ).into()))
             },
-            Term::Bool => Ok(Term::Sort(Univ::Var(None, CONSTRAINT_CHECKER.lock().fresh_var()))),
+            Term::Bool => Ok(Term::Sort(Univ::Var(None, BOOL_TYPE.clone()))),
             Term::Tt | Term::Ff => Ok(Term::Bool),
             Term::Ite(ty) => {
                 self.infer_ty(ty)?;
