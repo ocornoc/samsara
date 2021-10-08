@@ -98,7 +98,10 @@ impl Term {
             },
             Term::App(l, r) => {
                 l.normalize_mut();
-                if let Term::Lam(_, e) = l.as_mut() {
+                if let Term::Lam(ty, e) = l.as_mut() {
+                    if matches!(**ty, Term::Level) {
+                        r.normalize_mut();
+                    }
                     e.subst(0, r);
                     e.shift(-1, 1);
                     e.normalize_mut();
