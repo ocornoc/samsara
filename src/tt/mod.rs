@@ -193,7 +193,7 @@ impl Term {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Context(pub Vec<Term>);
 
 impl Context {
