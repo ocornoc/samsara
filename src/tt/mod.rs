@@ -250,6 +250,102 @@ impl Term {
     }
 }
 
+impl PartialEq for Term {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Sort(l0), Self::Sort(r0)) => {
+                let mut checker = CONSTRAINT_CHECKER.lock();
+                let mut c = Constraint {
+                    left: l0.clone(),
+                    c: ConstraintType::Le,
+                    right: r0.clone(),
+                };
+                checker.insert_constraint(c.clone()).unwrap();
+                c.c = ConstraintType::Ge;
+                checker.insert_constraint(c).unwrap();
+                true
+            },
+            (Self::Bound(l0), Self::Bound(r0)) => l0 == r0,
+            (Self::Lam(l0, l1), Self::Lam(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::App(l0, l1), Self::App(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::Pi(l0, l1), Self::Pi(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::IRCode(l0), Self::IRCode(r0)) => l0 == r0,
+            (Self::IRElement(l0), Self::IRElement(r0)) => l0 == r0,
+            (Self::IRChoose(l0, l1), Self::IRChoose(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::IRRecurse(l0, l1), Self::IRRecurse(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::Constr(_, l), Self::Constr(_, r)) => l == r,
+            (Self::Ite(l0), Self::Ite(r0)) => l0 == r0,
+            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+        }
+    }
+}
+
+impl Eq for Term {}
+
+impl PartialOrd for Term {
+    fn lt(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Sort(l0), Self::Sort(r0)) => {
+                let mut checker = CONSTRAINT_CHECKER.lock();
+                checker.insert_constraint(Constraint {
+                    left: l0.clone(),
+                    c: ConstraintType::Lt,
+                    right: r0.clone(),
+                }).unwrap();
+                true
+            },
+            (Self::Bound(l0), Self::Bound(r0)) => l0 < r0,
+            (Self::Lam(l0, l1), Self::Lam(r0, r1)) => l0 > r0 && l1 < r1,
+            (Self::App(l0, l1), Self::App(r0, r1)) => l0 < r0 && l1 < r1,
+            (Self::Pi(l0, l1), Self::Pi(r0, r1)) => l0 > r0 && l1 < r1,
+            (Self::IRCode(l0), Self::IRCode(r0)) => l0 < r0,
+            (Self::IRElement(l0), Self::IRElement(r0)) => l0 < r0,
+            (Self::IRChoose(l0, l1), Self::IRChoose(r0, r1)) => l0 < r0 && l1 < r1,
+            (Self::IRRecurse(l0, l1), Self::IRRecurse(r0, r1)) => l0 < r0 && l1 < r1,
+            (Self::Constr(_, l), Self::Constr(_, r)) => l < r,
+            (Self::Ite(l0), Self::Ite(r0)) => l0 < r0,
+            _ => false,
+        }
+    }
+
+    fn le(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Sort(l0), Self::Sort(r0)) => {
+                let mut checker = CONSTRAINT_CHECKER.lock();
+                checker.insert_constraint(Constraint {
+                    left: l0.clone(),
+                    c: ConstraintType::Le,
+                    right: r0.clone(),
+                }).unwrap();
+                true
+            },
+            (Self::Bound(l0), Self::Bound(r0)) => l0 <= r0,
+            (Self::Lam(l0, l1), Self::Lam(r0, r1)) => l0 >= r0 && l1 <= r1,
+            (Self::App(l0, l1), Self::App(r0, r1)) => l0 <= r0 && l1 <= r1,
+            (Self::Pi(l0, l1), Self::Pi(r0, r1)) => l0 >= r0 && l1 <= r1,
+            (Self::IRCode(l0), Self::IRCode(r0)) => l0 <= r0,
+            (Self::IRElement(l0), Self::IRElement(r0)) => l0 <= r0,
+            (Self::IRChoose(l0, l1), Self::IRChoose(r0, r1)) => l0 <= r0 && l1 <= r1,
+            (Self::IRRecurse(l0, l1), Self::IRRecurse(r0, r1)) => l0 <= r0 && l1 <= r1,
+            (Self::Constr(l0, l1), Self::Constr(r0, r1)) => l0 <= r0 && l1 <= r1,
+            (Self::Ite(l0), Self::Ite(r0)) => l0 <= r0,
+            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+        }
+    }
+
+    fn gt(&self, other: &Self) -> bool {
+        other.lt(self)
+    }
+
+    fn ge(&self, other: &Self) -> bool {
+        other.le(self)
+    }
+
+    fn partial_cmp(&self, _other: &Self) -> Option<std::cmp::Ordering> {
+        unimplemented!()
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Context(pub Vec<Term>);
 
