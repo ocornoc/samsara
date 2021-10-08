@@ -15,6 +15,14 @@ pub type SDeBruijn = i32;
 
 pub mod univ;
 
+macro_rules! term_ctor {
+    ($ctorname:ident, $name:tt $( ,)? $($arg:ident),*) => {
+        pub fn $ctorname(self, $($arg: Term),*) -> Term {
+            Term::$name(self.into(), $(Box::new($arg)),*)
+        }
+    };
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Term {
     Sort(Univ),
@@ -37,6 +45,19 @@ pub enum Term {
 }
 
 impl Term {
+    term_ctor!(lam, Lam, body);
+    term_ctor!(app, App, r);
+    term_ctor!(pi, Pi, body);
+    term_ctor!(ir_code, IRCode);
+    term_ctor!(ir_elem, IRElement);
+    term_ctor!(ir_choose, IRChoose, f);
+    term_ctor!(ir_recurse, IRRecurse, r);
+    term_ctor!(ite, Ite);
+
+    pub fn constr(self) -> Self {
+        Term::Constr(None.into(), self.into())
+    }
+
     pub fn shift(&mut self, by: SDeBruijn, cutoff: DeBruijn) {
         match self {
             Term::Bound(b) if *b >= cutoff => if by.is_negative() {
