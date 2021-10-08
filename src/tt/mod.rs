@@ -7,6 +7,7 @@ pub use univ::*;
 lazy_static! {
     static ref CONSTRAINT_CHECKER: Mutex<UniChecker> = Default::default();
     static ref BOOL_TYPE: Var = CONSTRAINT_CHECKER.lock().fresh_var();
+    static ref UNIT_TYPE: Var = CONSTRAINT_CHECKER.lock().fresh_var();
 }
 
 pub type DeBruijn = u32;
@@ -31,6 +32,8 @@ pub enum Term {
     Tt,
     Ff,
     Ite(Box<Term>),
+    Unit,
+    Star,
 }
 
 impl Term {
@@ -41,7 +44,8 @@ impl Term {
             } else {
                 *b += by.unsigned_abs();
             },
-            Term::Bound(_) | Term::Level | Term::Bool | Term::Tt | Term::Ff => (),
+            Term::Bound(_) | Term::Level | Term::Bool | Term::Tt | Term::Ff | Term::Unit
+            | Term::Star => (),
             Term::Sort(b) => {
                 b.shift(by, cutoff);
             },
@@ -70,7 +74,8 @@ impl Term {
             &mut Term::Bound(b) if b == db => {
                 self.clone_from(t);
             },
-            Term::Bound(_) | Term::Level | Term::Bool | Term::Tt | Term::Ff => (),
+            Term::Bound(_) | Term::Level | Term::Bool | Term::Tt | Term::Ff | Term::Unit
+            | Term::Star => (),
             Term::Sort(b) => if let Term::Sort(t) = t {
                 b.subst(db, t, &mut CONSTRAINT_CHECKER.lock())
             },
@@ -96,7 +101,8 @@ impl Term {
 
     pub fn normalize_mut(&mut self) {
         match self {
-            Term::Sort(_) | Term::Bound(_) | Term::Level | Term::Bool | Term::Tt | Term::Ff => (),
+            Term::Sort(_) | Term::Bound(_) | Term::Level | Term::Bool | Term::Tt | Term::Ff
+            | Term::Unit | Term::Star => (),
             Term::Lam(ty, e) | Term::Pi(ty, e) => {
                 ty.normalize_mut();
                 e.normalize_mut();
@@ -588,6 +594,8 @@ impl Context {
                     ).into(),
                 ).into()))
             },
+            Term::Unit => Ok(Term::Sort(Univ::Var(None, BOOL_TYPE.clone()))),
+            Term::Star => Ok(Term::Unit),
         }
     }
 }
