@@ -591,3 +591,50 @@ impl Context {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::ops::DerefMut;
+    use super::*;
+
+    fn fresh_checker() -> impl DerefMut<Target = UniChecker> {
+        let mut checker = CONSTRAINT_CHECKER.lock();
+        *checker = Default::default();
+        checker
+    }
+
+    fn checker_consistency() -> MResult<()> {
+        let checker = CONSTRAINT_CHECKER.lock();
+        checker.is_consistent().map_err(|c| miette!("{}", checker.create_dot_report(&c)))
+    }
+
+    #[test]
+    fn ite() -> MResult<()> {
+        fresh_checker();
+        let t1 = Term::App(
+            Term::App(
+                Term::App(
+                    Term::Ite(Term::Bool.into()).into(),
+                    Term::Tt.into(),
+                ).into(),
+                Term::Ff.into(),
+            ).into(),
+            Term::Tt.into(),
+        );
+        let t2 = Term::App(
+            Term::App(
+                Term::App(
+                    Term::Ite(Term::Bool.into()).into(),
+                    Term::Ff.into(),
+                ).into(),
+                Term::Ff.into(),
+            ).into(),
+            Term::Tt.into(),
+        );
+        let mut ctx = Context::default();
+        assert_eq!(ctx.infer_ty(&t1)?.normalize(), ctx.infer_ty(&t2)?.normalize());
+        assert_eq!(t1.normalize(), Term::Ff);
+        assert_eq!(t2.normalize(), Term::Tt);
+        checker_consistency()
+    }
+}
