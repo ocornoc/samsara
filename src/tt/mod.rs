@@ -26,6 +26,10 @@ pub enum Term {
     IRChoose(Box<Term>, Box<Term>),
     IRRecurse(Box<Term>, Box<Term>),
     Constr(RefCell<Option<Box<Term>>>, Box<Term>),
+    Bool,
+    Tt,
+    Ff,
+    Ite(Box<Term>),
 }
 
 impl Term {
@@ -36,7 +40,7 @@ impl Term {
             } else {
                 *b += by.unsigned_abs();
             },
-            Term::Bound(_) | Term::Level => (),
+            Term::Bound(_) | Term::Level | Term::Bool | Term::Tt | Term::Ff => (),
             Term::Sort(b) => {
                 b.shift(by, cutoff);
             },
@@ -48,7 +52,7 @@ impl Term {
                 l.shift(by, cutoff);
                 r.shift(by, cutoff);
             },
-            Term::IRCode(e) | Term::IRElement(e) => {
+            Term::IRCode(e) | Term::IRElement(e) | Term::Ite(e) => {
                 e.shift(by, cutoff);
             },
             Term::Constr(ty, e) => {
@@ -56,7 +60,7 @@ impl Term {
                 if let Some(ty) = ty.borrow_mut().as_mut() {
                     ty.shift(by, cutoff);
                 }
-            }
+            },
         }
     }
 
@@ -65,7 +69,7 @@ impl Term {
             &mut Term::Bound(b) if b == db => {
                 self.clone_from(t);
             },
-            Term::Bound(_) | Term::Level => (),
+            Term::Bound(_) | Term::Level | Term::Bool | Term::Tt | Term::Ff => (),
             Term::Sort(b) => if let Term::Sort(t) = t {
                 b.subst(db, t, &mut CONSTRAINT_CHECKER.lock())
             },
@@ -77,7 +81,7 @@ impl Term {
                 l.subst(db, t);
                 r.subst(db, t);
             },
-            Term::IRCode(e) | Term::IRElement(e) => {
+            Term::IRCode(e) | Term::IRElement(e) | Term::Ite(e) => {
                 e.subst(db, t);
             },
             Term::Constr(ty, e) => {
@@ -85,74 +89,96 @@ impl Term {
                 if let Some(ty) = ty.borrow_mut().as_mut() {
                     ty.subst(db, t);
                 }
-            }
+            },
         }
     }
 
     pub fn normalize_mut(&mut self) {
         match self {
-            Term::Sort(_) | Term::Bound(_) | Term::Level => (),
+            Term::Sort(_) | Term::Bound(_) | Term::Level | Term::Bool | Term::Tt | Term::Ff => (),
             Term::Lam(ty, e) | Term::Pi(ty, e) => {
                 ty.normalize_mut();
                 e.normalize_mut();
             },
             Term::App(l, r) => {
                 l.normalize_mut();
-                if let Term::Lam(ty, e) = l.as_mut() {
-                    if matches!(**ty, Term::Level) {
-                        r.normalize_mut();
-                    }
-                    e.subst(0, r);
-                    e.shift(-1, 1);
-                    e.normalize_mut();
-                    *self = e.as_ref().clone();
-                } else if let Term::Constr(ty, code) = l.as_mut() {
-                    match code.as_mut() {
-                        Term::IRElement(d) => {
-                            *self = Term::App(r.clone(), d.clone());
-                            self.normalize_mut();
-                        },
-                        Term::IRChoose(a, u) => {
-                            let mut u = u.clone();
-                            u.shift(1, 0);
-                            let mut r = r.clone();
-                            r.shift(1, 0);
-                            let mut left = Term::App(u, Term::Bound(0).into());
-                            left = Term::Constr(ty.clone(), left.into());
-                            left = Term::App(left.into(), r.clone()).normalize();
-                            *self = Term::Pi(a.clone(), left.into());
-                        },
-                        Term::IRRecurse(i, v) => {
-                            let mut v = v.clone();
-                            v.shift(2, 0);
-                            let mut r = r.clone();
-                            r.shift(2, 0);
-                            let mut i1 = i.clone();
-                            i1.shift(1, 0);
-                            let mut term = Term::Constr(
-                                ty.clone(),
-                                Term::App(v, Term::Bound(1).into()).into(),
-                            );
-                            term = Term::App(term.into(), r.clone()).normalize();
-                            term = Term::Pi(
-                                Term::Pi(i1, Term::App(r, Term::App(
-                                    Term::Bound(1).into(),
-                                    Term::Bound(0).into(),
-                                ).into()).normalize().into()).into(),
-                                term.into(),
-                            );
-                            let ty = ty.get_mut().as_mut().unwrap().clone();
-                            *self = Term::Pi(
-                                Term::Pi(i.clone(), ty).into(),
-                                term.into(),
-                            );
-                        },
-                        _ => {
+                match l.as_mut() {
+                    Term::Lam(ty, e) => {
+                        if matches!(**ty, Term::Level) {
                             r.normalize_mut();
-                        },
-                    }
-                } else {
-                    r.normalize_mut();
+                        }
+                        e.subst(0, r);
+                        e.shift(-1, 1);
+                        e.normalize_mut();
+                        *self = e.as_ref().clone();
+                    },
+                    Term::Constr(ty, code) => {
+                        match code.as_mut() {
+                            Term::IRElement(d) => {
+                                *self = Term::App(r.clone(), d.clone());
+                                self.normalize_mut();
+                            },
+                            Term::IRChoose(a, u) => {
+                                let mut u = u.clone();
+                                u.shift(1, 0);
+                                let mut r = r.clone();
+                                r.shift(1, 0);
+                                let mut left = Term::App(u, Term::Bound(0).into());
+                                left = Term::Constr(ty.clone(), left.into());
+                                left = Term::App(left.into(), r.clone()).normalize();
+                                *self = Term::Pi(a.clone(), left.into());
+                            },
+                            Term::IRRecurse(i, v) => {
+                                let mut v = v.clone();
+                                v.shift(2, 0);
+                                let mut r = r.clone();
+                                r.shift(2, 0);
+                                let mut i1 = i.clone();
+                                i1.shift(1, 0);
+                                let mut term = Term::Constr(
+                                    ty.clone(),
+                                    Term::App(v, Term::Bound(1).into()).into(),
+                                );
+                                term = Term::App(term.into(), r.clone()).normalize();
+                                term = Term::Pi(
+                                    Term::Pi(i1, Term::App(r, Term::App(
+                                        Term::Bound(1).into(),
+                                        Term::Bound(0).into(),
+                                    ).into()).normalize().into()).into(),
+                                    term.into(),
+                                );
+                                let ty = ty.get_mut().as_mut().unwrap().clone();
+                                *self = Term::Pi(
+                                    Term::Pi(i.clone(), ty).into(),
+                                    term.into(),
+                                );
+                            },
+                            _ => {
+                                r.normalize_mut();
+                            },
+                        }
+                    },
+                    Term::App(ll, lr) => {
+                        if let Term::App(lll, llr) = ll.as_mut() {
+                            if matches!(**lll, Term::Ite(_)) {
+                                match llr.as_mut() {
+                                    Term::Tt => {
+                                        *self = lr.as_ref().clone();
+                                        return;
+                                    },
+                                    Term::Ff => {
+                                        *self = r.as_ref().clone();
+                                        return;
+                                    },
+                                    _ => (),
+                                }
+                            }
+                        }
+                        r.normalize_mut();
+                    },
+                    _ => {
+                        r.normalize_mut();
+                    },
                 }
             },
             Term::IRCode(t) | Term::IRElement(t) => {
@@ -167,7 +193,10 @@ impl Term {
                     f.normalize_mut();
                 }
                 s.normalize_mut();
-            }
+            },
+            Term::Ite(ty) => {
+                ty.normalize_mut();
+            },
         }
     }
 
@@ -532,6 +561,30 @@ impl Context {
                 Ok(Term::Pi(code.clone(), Term::Pi(
                     Term::Pi(d, Term::Sort(Univ::Var(None, v1)).into()).into(),
                     Term::Sort(Univ::Var(None, v2)).into(),
+                ).into()))
+            },
+            Term::Bool => Ok(Term::Sort(Univ::Var(None, CONSTRAINT_CHECKER.lock().fresh_var()))),
+            Term::Tt | Term::Ff => Ok(Term::Bool),
+            Term::Ite(ty) => {
+                self.infer_ty(ty)?;
+                Ok(Term::Pi(Term::Bool.into(), Term::Pi(
+                    {
+                        let mut ty = ty.clone();
+                        ty.shift(1, 0);
+                        ty
+                    },
+                    Term::Pi(
+                        {
+                            let mut ty = ty.clone();
+                            ty.shift(2, 0);
+                            ty
+                        },
+                        {
+                            let mut ty = ty.clone();
+                            ty.shift(3, 0);
+                            ty
+                        },
+                    ).into(),
                 ).into()))
             },
         }
