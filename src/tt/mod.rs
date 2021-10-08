@@ -727,6 +727,10 @@ mod tests {
         checker
     }
 
+    fn fresh_var() -> Var {
+        CONSTRAINT_CHECKER.lock().fresh_var()
+    }
+
     fn checker_consistency() -> MResult<()> {
         let checker = CONSTRAINT_CHECKER.lock();
         checker.is_consistent().map_err(|c| miette!("{}", checker.create_dot_report(&c)))
