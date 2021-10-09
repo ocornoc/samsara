@@ -562,10 +562,10 @@ impl Context {
             Term::App(l, r) => match self.infer_ty(l)?.normalize() {
                 Term::Pi(ll, lr) => {
                     let rty = self.infer_ty(r)?.normalize();
-                    if *ll != rty {
-                        Err(self.app_arg_ty_not_ll(l, r, &ll, &lr, &rty))
-                    } else {
+                    if *ll >= rty {
                         Ok(*lr)
+                    } else {
+                        Err(self.app_arg_ty_not_ll(l, r, &ll, &lr, &rty))
                     }
                 },
                 lty => Err(self.app_l_not_pi(l, &lty, r)),
@@ -666,25 +666,26 @@ impl Context {
                 Ok(out)
             },
             Term::Constr(d, code) => {
-                let mut d = if let Some(d) = d.borrow().as_ref() {
+                let rc = &mut *d.borrow_mut();
+                let d = if let Some(d) = rc.as_ref() {
                     d.clone()
                 } else {
                     let codety = match self.infer_ty(code)?.normalize() {
                         Term::IRCode(codety) => codety,
                         codety => bail!(self.ir_constr_codety_not_code(t, code, &codety)),
                     };
-                    *d.borrow_mut() = Some(codety.clone());
+                    *rc = Some(codety.clone());
                     codety
                 };
-                d.shift(1, 0);
+                let mut d2 = d.clone();
+                d2.shift(1, 0);
                 let (v1, v2) = {
                     let mut checker = CONSTRAINT_CHECKER.lock();
                     (checker.fresh_var(), checker.fresh_var())
                 };
-                Ok(Term::Pi(code.clone(), Term::Pi(
-                    Term::Pi(d, Term::Sort(Univ::Var(None, v1)).into()).into(),
-                    Term::Sort(Univ::Var(None, v2)).into(),
-                ).into()))
+                Ok(d2.pi(Term::Sort(Univ::Var(None, v1))).pi(
+                    Term::Sort(Univ::Var(None, v2))
+                ))
             },
             Term::Bool => Ok(Term::Sort(Univ::Var(None, BOOL_TYPE.clone()))),
             Term::Tt | Term::Ff => Ok(Term::Bool),
