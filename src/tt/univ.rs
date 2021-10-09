@@ -695,6 +695,12 @@ impl UniChecker {
     }
 }
 
+impl Display for UniChecker {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        f.write_str(&self.create_dot_report(&Vec::new()))
+    }
+}
+
 impl Default for UniChecker {
     fn default() -> Self {
         let mut graph = DiGraph::with_capacity(10000, 1000);
