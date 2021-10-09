@@ -649,7 +649,7 @@ impl Context {
                 let (ppty, pout) = pty.into_pi().map_err(|pty| {
                     self.ir_rec_pty_not_pi(i, &i_sort, r, &pty, &out)
                 })?;
-                ensure!(ppty == **i, self.ir_rec_ppty_not_i(t, i, &ppty));
+                ensure!(ppty >= **i, self.ir_rec_ppty_not_i(t, i, &ppty));
                 if let Term::IRCode(out) = &mut out {
                     ensure!(out.as_ref() == &pout, self.ir_rec_pout_not_out(t, out, &pout));
                     out.shift(-2, 0);
