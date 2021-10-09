@@ -151,10 +151,9 @@ impl Term {
                                 u.shift(1, 0);
                                 let mut r = r.clone();
                                 r.shift(1, 0);
-                                let mut left = Term::App(u, Term::Bound(0).into());
+                                let mut left = u.app(Term::Bound(0));
                                 left = Term::Constr(ty.clone(), left.into());
-                                left = Term::App(left.into(), r.clone()).normalize();
-                                *self = Term::Pi(a.clone(), left.into());
+                                *self = a.clone().pi(left.app(r.as_ref().clone()).normalize());
                             },
                             Term::IRRecurse(i, v) => {
                                 let mut v = v.clone();
@@ -165,21 +164,14 @@ impl Term {
                                 i1.shift(1, 0);
                                 let mut term = Term::Constr(
                                     ty.clone(),
-                                    Term::App(v, Term::Bound(1).into()).into(),
-                                );
-                                term = Term::App(term.into(), r.clone()).normalize();
-                                term = Term::Pi(
-                                    Term::Pi(i1, Term::App(r, Term::App(
-                                        Term::Bound(1).into(),
-                                        Term::Bound(0).into(),
-                                    ).into()).normalize().into()).into(),
-                                    term.into(),
-                                );
+                                    v.app(Term::Bound(1)).into(),
+                                ).app(r.as_ref().clone()).normalize();
+                                term = i1
+                                    .pi(r.app(Term::Bound(1).app(Term::Bound(0))))
+                                    .normalize()
+                                    .pi(term);
                                 let ty = ty.get_mut().as_mut().unwrap().clone();
-                                *self = Term::Pi(
-                                    Term::Pi(i.clone(), ty).into(),
-                                    term.into(),
-                                );
+                                *self = i.clone().pi(*ty).pi(term);
                             },
                             _ => {
                                 r.normalize_mut();
@@ -247,6 +239,20 @@ impl Term {
         } else {
             Err(self)
         }
+    }
+}
+
+impl From<Univ> for Term {
+    #[inline]
+    fn from(u: Univ) -> Self {
+        Term::Sort(u)
+    }
+}
+
+impl From<Var> for Term {
+    #[inline]
+    fn from(v: Var) -> Self {
+        Term::Sort(v.into())
     }
 }
 
@@ -531,9 +537,9 @@ impl Context {
                 checker.insert_constraint(Constraint {
                     left: t.clone(),
                     c: ConstraintType::Lt,
-                    right: Univ::Var(None, v),
+                    right: v.into(),
                 })?;
-                Ok(Term::Sort(Univ::Var(None, v)))
+                Ok(v.into())
             },
             &Term::Bound(db) => self.0.get(self.0.len() - db as usize - 1).cloned().ok_or_else(||
                 self.db_index_failed(db)
@@ -545,7 +551,7 @@ impl Context {
                 checker.insert_constraint(Constraint {
                     left: Univ::Var(None, zero) + Level::new(1, 0),
                     c: ConstraintType::Le,
-                    right: Univ::Var(None, v),
+                    right: v.into(),
                 })?;
                 v
             }))),
@@ -557,7 +563,7 @@ impl Context {
                 self.0.push(ty.as_ref().clone());
                 let e = self.infer_ty(e)?;
                 self.0.pop();
-                Ok(Term::Pi(ty.clone(), Box::new(e)))
+                Ok(ty.clone().pi(e))
             },
             Term::App(l, r) => match self.infer_ty(l)?.normalize() {
                 Term::Pi(ll, lr) => {
@@ -585,7 +591,7 @@ impl Context {
                     checker.insert_constraint(Constraint {
                         left: Univ::Max(vec![ty_sort, e_sort]),
                         c: ConstraintType::Lt,
-                        right: Univ::Var(None, v),
+                        right: v.into(),
                     })?;
                     v
                 })))
@@ -597,9 +603,9 @@ impl Context {
                     checker.insert_constraint(Constraint {
                         left: t,
                         c: ConstraintType::Lt,
-                        right: Univ::Var(None, v),
+                        right: v.into(),
                     })?;
-                    Ok(Term::Sort(Univ::Var(None, v)))
+                    Ok(v.into())
                 },
                 ty => Err(self.ir_code_not_sort(t, &ty)),
             },
@@ -608,7 +614,7 @@ impl Context {
                 let a_sort = self.infer_ty(a)?.normalize().into_sort().map_err(|aty| {
                     self.ir_choose_a_not_sort(a, &aty, f)
                 })?;
-                self.0.push(Term::Sort(a_sort.clone()));
+                self.0.push(a_sort.clone().into());
                 let (pty, out) = self.infer_ty(f)?.normalize().into_pi().map_err(|fty| {
                     self.ir_choose_fty_not_pi(a, &a_sort, f, &fty)
                 })?;
@@ -687,31 +693,27 @@ impl Context {
                     Term::Sort(Univ::Var(None, v2))
                 ))
             },
-            Term::Bool => Ok(Term::Sort(Univ::Var(None, BOOL_TYPE.clone()))),
+            Term::Bool => Ok((*BOOL_TYPE).into()),
             Term::Tt | Term::Ff => Ok(Term::Bool),
             Term::Ite(ty) => {
                 self.infer_ty(ty)?;
-                Ok(Term::Pi(Term::Bool.into(), Term::Pi(
+                Ok(Term::Bool.pi(
                     {
                         let mut ty = ty.clone();
                         ty.shift(1, 0);
                         ty
-                    },
-                    Term::Pi(
-                        {
-                            let mut ty = ty.clone();
-                            ty.shift(2, 0);
-                            ty
-                        },
-                        {
-                            let mut ty = ty.clone();
-                            ty.shift(3, 0);
-                            ty
-                        },
-                    ).into(),
-                ).into()))
+                    }.pi({
+                        let mut ty = ty.clone();
+                        ty.shift(2, 0);
+                        ty
+                    }.pi({
+                        let mut ty = ty.clone();
+                        ty.shift(3, 0);
+                        *ty
+                    }))
+                ))
             },
-            Term::Unit => Ok(Term::Sort(Univ::Var(None, BOOL_TYPE.clone()))),
+            Term::Unit => Ok((*UNIT_TYPE).into()),
             Term::Star => Ok(Term::Unit),
         }
     }
@@ -740,26 +742,8 @@ mod tests {
     #[test]
     fn ite() -> MResult<()> {
         fresh_checker();
-        let t1 = Term::App(
-            Term::App(
-                Term::App(
-                    Term::Ite(Term::Bool.into()).into(),
-                    Term::Tt.into(),
-                ).into(),
-                Term::Ff.into(),
-            ).into(),
-            Term::Tt.into(),
-        );
-        let t2 = Term::App(
-            Term::App(
-                Term::App(
-                    Term::Ite(Term::Bool.into()).into(),
-                    Term::Ff.into(),
-                ).into(),
-                Term::Ff.into(),
-            ).into(),
-            Term::Tt.into(),
-        );
+        let t1 = Term::Bool.ite().app(Term::Tt).app(Term::Ff).app(Term::Tt);
+        let t2 = Term::Bool.ite().app(Term::Ff).app(Term::Ff).app(Term::Tt);
         let mut ctx = Context::default();
         assert_eq!(ctx.infer_ty(&t1)?.normalize(), ctx.infer_ty(&t2)?.normalize());
         assert_eq!(t1.normalize(), Term::Ff);
@@ -781,7 +765,6 @@ mod tests {
             Univ::Var(None, fresh_var())
         )));
         assert!(matches!(ctx.infer_ty(&constr)?.normalize(), Term::Sort(_)));
-        println!("{:#?}", constr.normalize());
         
         checker_consistency()
     }

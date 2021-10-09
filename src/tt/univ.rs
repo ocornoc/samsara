@@ -452,9 +452,15 @@ impl Univ {
     }
 }
 
+impl From<Var> for Univ {
+    fn from(v: Var) -> Self {
+        Univ::Var(None, v)
+    }
+}
+
 impl AddAssign<Level> for Univ {
     fn add_assign(&mut self, rhs: Level) {
-        *self = Univ::Add(std::mem::replace(self, Univ::Var(None, Var(0))).into(), rhs);
+        *self = Univ::Add(std::mem::replace(self, Var(0).into()).into(), rhs);
     }
 }
 
@@ -730,11 +736,11 @@ mod tests {
     #[test]
     fn term_normalization() {
         let mut checker = UniChecker::default();
-        let v1 = Univ::Var(None, checker.fresh_var());
-        let v2 = Univ::Var(None, checker.fresh_var());
-        let v3 = Univ::Var(None, checker.fresh_var());
-        let v4 = Univ::Var(None, checker.fresh_var());
-        let v5 = Univ::Var(None, checker.fresh_var());
+        let v1: Univ = checker.fresh_var().into();
+        let v2: Univ = checker.fresh_var().into();
+        let v3: Univ = checker.fresh_var().into();
+        let v4: Univ = checker.fresh_var().into();
+        let v5: Univ = checker.fresh_var().into();
         let mut t = Univ::Max(vec![
             Univ::Max(vec![
                 Univ::Min(vec![
@@ -760,10 +766,10 @@ mod tests {
     #[test]
     fn sat_graph() {
         let mut checker = UniChecker::default();
-        let v1 = Univ::Var(None, checker.fresh_var());
-        let v2 = Univ::Var(None, checker.fresh_var());
-        let v3 = Univ::Var(None, checker.fresh_var());
-        let v4 = Univ::Var(None, checker.fresh_var());
+        let v1: Univ = checker.fresh_var().into();
+        let v2: Univ = checker.fresh_var().into();
+        let v3: Univ = checker.fresh_var().into();
+        let v4: Univ = checker.fresh_var().into();
         checker.try_extend([
             Constraint {
                 left: v1.clone(),
@@ -802,10 +808,10 @@ mod tests {
     #[test]
     fn unsat_graph() {
         let mut checker = UniChecker::default();
-        let v1 = Univ::Var(None, checker.fresh_var());
-        let v2 = Univ::Var(None, checker.fresh_var());
-        let v3 = Univ::Var(None, checker.fresh_var());
-        let v4 = Univ::Var(None, checker.fresh_var());
+        let v1: Univ = checker.fresh_var().into();
+        let v2: Univ = checker.fresh_var().into();
+        let v3: Univ = checker.fresh_var().into();
+        let v4: Univ = checker.fresh_var().into();
         checker.try_extend([
             Constraint {
                 left: v1.clone(),
