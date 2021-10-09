@@ -766,4 +766,23 @@ mod tests {
         assert_eq!(t2.normalize(), Term::Tt);
         checker_consistency()
     }
+
+    #[test]
+    fn nat_ir_code() -> MResult<()> {
+        fresh_checker();
+        let nat_code = Term::Bool.ir_choose(Term::Bool.lam(Term::Unit.ir_code().ite()
+            .app(Term::Bound(0))
+            .app(Term::Star.ir_elem())
+            .app(Term::Unit.ir_recurse(Term::Unit.pi(Term::Unit).lam(Term::Star.ir_elem()))),
+        ));
+        let mut ctx = Context::default();
+        assert_eq!(ctx.infer_ty(&nat_code)?.normalize(), Term::Unit.ir_code());
+        let constr = nat_code.constr().app(Term::Unit.lam(Term::Sort(
+            Univ::Var(None, fresh_var())
+        )));
+        assert!(matches!(ctx.infer_ty(&constr)?.normalize(), Term::Sort(_)));
+        println!("{:#?}", constr.normalize());
+        
+        checker_consistency()
+    }
 }
