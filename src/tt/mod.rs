@@ -90,6 +90,19 @@ impl Term {
         }
     }
 
+    fn ite_applied_mut(&mut self) -> Option<(&mut Term, &mut Term, &mut Term)> {
+        if let Term::App(l, r) = self {
+            if let Term::App(ll, lr) = l.as_mut() {
+                if let Term::App(lll, llr) = ll.as_mut() {
+                    if let Term::Ite(ty) = lll.as_mut() {
+                        return Some((ty, lr, r));
+                    }
+                }
+            }
+        }
+        None
+    }
+
     pub fn subst(&mut self, db: DeBruijn, t: &Term) {
         match self {
             &mut Term::Bound(b) if b == db => {
@@ -141,6 +154,7 @@ impl Term {
                         *self = e.as_ref().clone();
                     },
                     Term::Constr(ty, code) => {
+                        code.normalize_mut();
                         match code.as_mut() {
                             Term::IRElement(d) => {
                                 *self = Term::App(r.clone(), d.clone());
@@ -151,9 +165,9 @@ impl Term {
                                 u.shift(1, 0);
                                 let mut r = r.clone();
                                 r.shift(1, 0);
-                                let mut left = u.app(Term::Bound(0));
+                                let mut left = u.app(Term::Bound(0)).normalize();
                                 left = Term::Constr(ty.clone(), left.into());
-                                *self = a.clone().pi(left.app(r.as_ref().clone()).normalize());
+                                *self = a.clone().pi(left.app(r.as_ref().clone())).normalize();
                             },
                             Term::IRRecurse(i, v) => {
                                 let mut v = v.clone();
@@ -165,16 +179,29 @@ impl Term {
                                 let mut term = Term::Constr(
                                     ty.clone(),
                                     v.app(Term::Bound(1)).into(),
-                                ).app(r.as_ref().clone()).normalize();
+                                ).app(r.as_ref().clone());
                                 term = i1
                                     .pi(r.app(Term::Bound(1).app(Term::Bound(0))))
-                                    .normalize()
                                     .pi(term);
                                 let ty = ty.get_mut().as_mut().unwrap().clone();
-                                *self = i.clone().pi(*ty).pi(term);
+                                *self = i.clone().pi(*ty).pi(term).normalize();
                             },
-                            _ => {
-                                r.normalize_mut();
+                            _ => match code.ite_applied_mut() {
+                                Some((c@Term::IRCode(_), llr, lr)) => {
+                                    *llr = Term::Constr(
+                                        ty.clone(),
+                                        std::mem::replace(llr, Term::Bool).into(),
+                                    ).app(r.as_ref().clone()).normalize();
+                                    *lr = Term::Constr(
+                                        ty.clone(),
+                                        std::mem::replace(lr, Term::Bool).into(),
+                                    ).app(r.as_ref().clone()).normalize();
+                                    *c = CONSTRAINT_CHECKER.lock().fresh_var().into();
+                                    *self = std::mem::replace(code.as_mut(), Term::Bool);
+                                },
+                                _ => {
+                                    r.normalize_mut();
+                                },
                             },
                         }
                     },
@@ -765,7 +792,7 @@ mod tests {
             Univ::Var(None, fresh_var())
         )));
         assert!(matches!(ctx.infer_ty(&constr)?.normalize(), Term::Sort(_)));
-        
+        println!("{:#?}", constr.normalize());
         checker_consistency()
     }
 }
