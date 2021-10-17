@@ -776,7 +776,13 @@ mod tests {
 
     fn checker_consistency() -> MResult<()> {
         let checker = CONSTRAINT_CHECKER.lock();
-        checker.is_consistent().map_err(|c| miette!("{}", checker.create_dot_report(&c)))
+        match checker.is_consistent() {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                eprintln!("{}", checker.create_dot_report(&e));
+                Err(miette!("universe consistency error"))
+            },
+        }
     }
 
     #[test]
@@ -789,13 +795,7 @@ mod tests {
         assert_eq!(ctx.infer_ty(&t1)?.normalize(), ctx.infer_ty(&t2)?.normalize());
         assert_eq!(t1.normalize(), Term::Ff);
         assert_eq!(t2.normalize(), Term::Tt);
-        match checker_consistency() {
-            ok@Ok(_) => ok,
-            Err(e) => {
-                eprintln!("{}", e);
-                Err(miette!("consistency error"))
-            },
-        }
+        checker_consistency()
     }
 
     #[test]
@@ -813,12 +813,6 @@ mod tests {
             Univ::Var(None, fresh_var())
         )));
         assert!(matches!(ctx.infer_ty(&constr)?.normalize(), Term::Sort(_)));
-        match checker_consistency() {
-            ok@Ok(_) => ok,
-            Err(e) => {
-                eprintln!("{}", e);
-                Err(miette!("consistency error"))
-            },
-        }
+        checker_consistency()
     }
 }
