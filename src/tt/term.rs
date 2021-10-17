@@ -5,9 +5,9 @@ use parking_lot::Mutex;
 use super::*;
 
 lazy_static! {
-    static ref CONSTRAINT_CHECKER: Mutex<UniChecker> = Default::default();
-    static ref BOOL_TYPE: Var = CONSTRAINT_CHECKER.lock().fresh_var();
-    static ref UNIT_TYPE: Var = CONSTRAINT_CHECKER.lock().fresh_var();
+    pub static ref CONSTRAINT_CHECKER: Mutex<UniChecker> = Default::default();
+    pub static ref BOOL_TYPE: Var = CONSTRAINT_CHECKER.lock().fresh_var();
+    pub static ref UNIT_TYPE: Var = CONSTRAINT_CHECKER.lock().fresh_var();
 }
 
 pub type DeBruijn = u32;
