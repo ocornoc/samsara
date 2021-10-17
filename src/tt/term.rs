@@ -747,11 +747,26 @@ impl Context {
 #[cfg(test)]
 mod tests {
     use std::ops::DerefMut;
+    use serial_test::serial;
     use super::*;
 
+    lazy_static! {
+        static ref WAS_BOOL_FIRST: bool = BOOL_TYPE.0 < UNIT_TYPE.0;
+    }
+
     fn fresh_checker() -> impl DerefMut<Target = UniChecker> {
+        lazy_static::initialize(&CONSTRAINT_CHECKER);
+        lazy_static::initialize(&BOOL_TYPE);
+        lazy_static::initialize(&UNIT_TYPE);
         let mut checker = CONSTRAINT_CHECKER.lock();
         *checker = Default::default();
+        if *WAS_BOOL_FIRST {
+            assert_eq!(checker.fresh_var(), *BOOL_TYPE);
+            assert_eq!(checker.fresh_var(), *UNIT_TYPE);
+        } else {
+            assert_eq!(checker.fresh_var(), *UNIT_TYPE);
+            assert_eq!(checker.fresh_var(), *BOOL_TYPE);
+        }
         checker
     }
 
@@ -765,6 +780,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn ite() -> MResult<()> {
         fresh_checker();
         let t1 = Term::Bool.ite().app(Term::Tt).app(Term::Ff).app(Term::Tt);
@@ -773,10 +789,17 @@ mod tests {
         assert_eq!(ctx.infer_ty(&t1)?.normalize(), ctx.infer_ty(&t2)?.normalize());
         assert_eq!(t1.normalize(), Term::Ff);
         assert_eq!(t2.normalize(), Term::Tt);
-        checker_consistency()
+        match checker_consistency() {
+            ok@Ok(_) => ok,
+            Err(e) => {
+                eprintln!("{}", e);
+                Err(miette!("consistency error"))
+            },
+        }
     }
 
     #[test]
+    #[serial]
     fn nat_ir_code() -> MResult<()> {
         fresh_checker();
         let nat_code = Term::Bool.ir_choose(Term::Bool.lam(Term::Unit.ir_code().ite()
@@ -790,7 +813,12 @@ mod tests {
             Univ::Var(None, fresh_var())
         )));
         assert!(matches!(ctx.infer_ty(&constr)?.normalize(), Term::Sort(_)));
-        println!("{:#?}", constr.normalize());
-        checker_consistency()
+        match checker_consistency() {
+            ok@Ok(_) => ok,
+            Err(e) => {
+                eprintln!("{}", e);
+                Err(miette!("consistency error"))
+            },
+        }
     }
 }

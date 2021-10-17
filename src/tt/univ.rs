@@ -141,7 +141,7 @@ impl FloatMeasure for Level {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub struct Var(u32);
+pub struct Var(pub(super) u32);
 
 impl From<NodeIndex<u32>> for Var {
     fn from(n: NodeIndex<u32>) -> Self {
